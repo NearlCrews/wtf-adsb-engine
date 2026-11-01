@@ -90,12 +90,13 @@ jobs:
             dist/wtf_adsb_engine-*.whl
       - name: Move latest to the released image
         run: |
-          case "$GITHUB_REF_NAME" in
-            *-*)
-              echo "Pre-release $GITHUB_REF_NAME does not move latest"
-              exit 0
-              ;;
-          esac
+          # PEP 440 decides: 0.2.0rc1, 0.2.0b1, 0.2.0.dev1, and 0.2.0-rc.1 are all
+          # pre-releases. An invalid version fails the step instead of moving latest.
+          kind="$(.venv/bin/python -c 'import sys; from packaging.version import Version; print("pre-release" if Version(sys.argv[1]).is_prerelease else "release")' "${GITHUB_REF_NAME#v}")"
+          if [ "$kind" = "pre-release" ]; then
+            echo "Pre-release $GITHUB_REF_NAME does not move latest"
+            exit 0
+          fi
           docker tag "$IMAGE" "$LATEST"
           docker push "$LATEST"
           echo "- Also tagged: \`$LATEST\`" >> "$GITHUB_STEP_SUMMARY"

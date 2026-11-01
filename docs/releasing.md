@@ -117,8 +117,10 @@ The tag starts `.github/workflows/release.yml`, which uses only the workflow's
 4. creates the GitHub release for the tag with those two inventories, the
    source archive, and the wheel attached;
 5. tags and pushes the same image as `latest`, only after the release exists
-   and only when the version has no hyphen. A pre-release such as `0.2.0-rc.1`
-   never moves `latest`, and a failed release leaves it on the previous release.
+   and only when `packaging` does not report the version as a pre-release
+   (`Version(version).is_prerelease`). A pre-release such as `0.2.0rc1`,
+   `0.2.0b1`, `0.2.0.dev1`, or `0.2.0-rc.1` never moves `latest`, and a failed
+   release leaves it on the previous release.
 
 GitHub derives the image name from the repository, lowercased, so `OWNER` is
 the account or organization that holds the repository. Replace the placeholder
@@ -136,5 +138,5 @@ pull the pushed version tag and copy `build.json` and `packages.json` out of
 it, write the notes with `tools/release_notes.py` and add the digest from the
 run's job summary, build the archives with `make build` from the tagged commit,
 attach them with `gh release create --verify-tag`, and then, for a version
-without a hyphen, tag the pulled image as `latest` and push it. Do not move a
+that is not a pre-release, tag the pulled image as `latest` and push it. Do not move a
 published tag; fix forward with a new version instead.
