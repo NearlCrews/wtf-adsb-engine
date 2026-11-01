@@ -402,7 +402,7 @@ def secure(descriptor, owner, mode):
 
 
 def already_secured(info, owner, mode):
-    """True when an existing directory already has the mode and owner configure would give it."""
+    """True when an existing file or directory already has the mode and owner configure would give it."""
     if stat.S_IMODE(info.st_mode) != mode:
         return False
     if owner is not None:
@@ -487,6 +487,8 @@ def make_directory(path, values, role, known=frozenset()):
             created = True
         except FileExistsError:
             created = False
+        # Check again: another account could have created a missing parent in the meantime.
+        check_ancestors(path)
         try:
             descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         except PermissionError:
@@ -522,7 +524,9 @@ def write_private(directory, name, content, owner, mode, label):
 
     Every operation is relative to the directory descriptor, and modes and owners are set on
     open descriptors before the file takes its final name, so neither a symbolic link nor a
-    hard link placed there is followed.
+    hard link placed there is followed. An unchanged file is kept only when it already has
+    the mode and owner; otherwise it is replaced, so an account that held it open for writing
+    before its owner changed cannot write to the new file.
     """
     data = content if isinstance(content, bytes) else content.encode()
     try:
@@ -538,12 +542,10 @@ def write_private(directory, name, content, owner, mode, label):
             info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode):
                 raise SetupError(f"{label} must be a regular file, not a symbolic link")
-            if info.st_nlink == 1:
+            if info.st_nlink == 1 and already_secured(info, owner, mode):
                 with os.fdopen(os.dup(descriptor), "rb") as stream:
-                    unchanged = stream.read(len(data) + 1) == data
-                if unchanged:
-                    secure(descriptor, owner, mode)
-                    return False
+                    if stream.read(len(data) + 1) == data:
+                        return False
         finally:
             os.close(descriptor)
     temporary = "." + name + ".tmp"
@@ -822,11 +824,13 @@ def check_tree(values, places, env):
     report = {"ok": True, "expected_owner": f"{data_owner[0]}:{data_owner[1]}", "problems": []}
 
     def require(path, kind, mode, owner=None, readable=False):
+        """Report any problem with the path; return True when there was none."""
+        before = len(report["problems"])
         try:
             info = path.lstat()
         except OSError as error:
             report["problems"].append(f"{path}: {type(error).__name__}")
-            return
+            return False
         if (
             kind == "dir"
             and not stat.S_ISDIR(info.st_mode)
@@ -834,7 +838,7 @@ def check_tree(values, places, env):
             and not stat.S_ISREG(info.st_mode)
         ):
             report["problems"].append(f"{path}: not a regular {'directory' if kind == 'dir' else 'file'}")
-            return
+            return False
         if stat.S_IMODE(info.st_mode) != mode:
             report["problems"].append(f"{path}: mode {stat.S_IMODE(info.st_mode):o}, expected {mode:o}")
         if owner is not None and (info.st_uid, info.st_gid) != owner:
@@ -844,6 +848,7 @@ def check_tree(values, places, env):
                 f"{path}: owner {info.st_uid}:{info.st_gid}, so the container account "
                 f"{data_owner[0]}:{data_owner[1]} cannot read it"
             )
+        return len(report["problems"]) == before
 
     config = places["config"]
     require(config, "dir", directory_mode("config"), readable=True)
@@ -857,9 +862,11 @@ def check_tree(values, places, env):
         require(places[name], "dir", directory_mode("data"), data_owner)
     for table in reference_tables():
         copy = places["reference"] / table.name
-        require(copy, "file", TABLE_MODE, data_owner)
+        # Compare only a copy that passed, so a symbolic link or other problem is never followed.
+        if not require(copy, "file", TABLE_MODE, data_owner):
+            continue
         try:
-            if copy.is_file() and copy.read_bytes() != table.read_bytes():
+            if copy.read_bytes() != table.read_bytes():
                 report["problems"].append(f"{copy}: differs from the bundled table; rerun configure")
         except OSError as error:
             report["problems"].append(f"{copy}: {type(error).__name__}")

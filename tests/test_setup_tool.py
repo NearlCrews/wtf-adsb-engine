@@ -259,6 +259,19 @@ class SetupToolTests(unittest.TestCase):
         self.assertIn("fa.key: FileNotFoundError", problems)
         self.assertIn("mode 755", problems)
 
+    def test_check_does_not_follow_a_symlinked_reference_table(self):
+        self.assertEqual(self.configure()[0], 0)
+        table = next((self.base / "references").iterdir())
+        elsewhere = self.base / "elsewhere.json"
+        elsewhere.write_text("{}\n")
+        table.unlink()
+        table.symlink_to(elsewhere)
+        code, result = run("check", "--output", str(self.output), "--docker", self.docker)
+        problems = result["checks"]["directories"]["problems"]
+        self.assertEqual(code, 1)
+        self.assertIn(f"{table}: not a regular file", problems)
+        self.assertFalse(any("differs from the bundled table" in problem for problem in problems), problems)
+
     def test_deploy_print_only_shows_the_compose_commands(self):
         self.assertEqual(self.configure(viewer=False)[0], 0)
         code, result = run("deploy", "--output", str(self.output), "--print-only", "--docker", self.docker)
@@ -442,17 +455,82 @@ class SetupToolTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o750)
         for name in ("state", "feed", "references"):
             self.assertEqual(stat.S_IMODE((self.base / name).stat().st_mode), 0o700, name)
+        # The configuration files already have their owner and stay. The simulated fchown never
+        # gave the tables to uid, so they are replaced again rather than re-owned in place.
         with self.as_root(owner):
-            self.assertEqual(
-                setup_tool.configure(str(self.output / "answers.json"), str(self.output))["changed"], []
-            )
+            changed = setup_tool.configure(str(self.output / "answers.json"), str(self.output))["changed"]
+        tables = (ROOT / "src/wtf_adsb_engine/analysis/data").glob("*.json")
+        self.assertEqual(sorted(changed), sorted(str(self.base / "references" / t.name) for t in tables))
+
+    def test_sudo_replaces_an_unchanged_file_whose_owner_changes(self):
+        owner, group = os.getuid(), os.getgid()
+        values = {"uid": owner, "gid": group}
+        self.output.mkdir(mode=0o750)
+        settings = self.output / "setup.json"
+        settings.write_text("{}\n")
+        settings.chmod(0o600)
+        before = settings.stat().st_ino
+        descriptor = os.open(self.output, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with open(settings, "r+b") as held:
+                # The file belongs to uid, and the sudo user takes the configuration over.
+                with self.as_root(owner + 5):
+                    self.assertTrue(
+                        setup_tool.write_private(
+                            descriptor,
+                            "setup.json",
+                            "{}\n",
+                            setup_tool.owner_for("config", values),
+                            0o600,
+                            settings,
+                        )
+                    )
+                held.write(b"tampered")
+                held.flush()
+            replaced = settings.stat().st_ino
+            self.assertNotEqual(replaced, before)
+            self.assertEqual(settings.read_text(), "{}\n")
+            # A file that already has the operator as owner stays in place.
+            with self.as_root(owner):
+                self.assertFalse(
+                    setup_tool.write_private(
+                        descriptor,
+                        "setup.json",
+                        "{}\n",
+                        setup_tool.owner_for("config", values),
+                        0o600,
+                        settings,
+                    )
+                )
+            self.assertEqual(settings.stat().st_ino, replaced)
+        finally:
+            os.close(descriptor)
+
+    def test_sudo_rechecks_parents_created_while_making_a_directory(self):
+        owner, values = os.getuid(), {"uid": os.getuid() + 1, "gid": os.getgid()}
+        middle = self.base / "middle"
+        create = os.makedirs
+
+        def racing_makedirs(path, mode=0o777, exist_ok=False):
+            # Another account creates the missing parent first, open to everyone.
+            middle.mkdir()
+            middle.chmod(0o777)
+            create(path, mode=mode, exist_ok=exist_ok)
+
+        with (
+            self.as_root(owner),
+            mock.patch.object(setup_tool.os, "makedirs", side_effect=racing_makedirs),
+            self.assertRaisesRegex(setup_tool.SetupError, f"{middle} is writable by group or others"),
+        ):
+            os.close(setup_tool.make_directory(middle / "state", values, "data"))
 
     def test_sudo_refuses_parents_another_account_could_swap(self):
         owner, values = os.getuid(), {"uid": os.getuid() + 1, "gid": os.getgid()}
         # The temporary directory belongs to the test's account, which is not the sudo user here.
+        # The refusal names the first such parent, which may sit above it under a custom TMPDIR.
         for sudo_uid in (None, owner + 2):
             with self.subTest(sudo_uid=sudo_uid), self.as_root(sudo_uid) as fchown:
-                with self.assertRaisesRegex(setup_tool.SetupError, f"{self.base} belongs to uid {owner}"):
+                with self.assertRaisesRegex(setup_tool.SetupError, f"belongs to uid {owner}\\."):
                     setup_tool.make_directory(self.base / "state", values, "data")
                 fchown.assert_not_called()
             self.assertFalse((self.base / "state").exists())
@@ -472,7 +550,7 @@ class SetupToolTests(unittest.TestCase):
             os.close(setup_tool.make_directory(link / "state", values, "data"))
         self.assertTrue((self.base / "state").is_dir())
         self.assertEqual(self.configure()[0], 0)
-        with self.as_root(None), self.assertRaisesRegex(setup_tool.SetupError, f"{self.base} belongs to uid"):
+        with self.as_root(None), self.assertRaisesRegex(setup_tool.SetupError, f"belongs to uid {owner}\\."):
             setup_tool.check(str(self.output), self.docker)
 
     def test_sudo_refuses_an_answers_file_another_account_owns(self):
