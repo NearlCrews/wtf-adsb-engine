@@ -20,6 +20,48 @@ from .storage import Store
 
 INSTANCE = re.compile(r"[a-z][a-z0-9_-]{0,63}\Z")
 LOG = logging.getLogger(__name__)
+# What a failure message may carry about a provider: (pattern, replacement) in order.
+# URLs go first so that their hosts and paths are not replaced piecemeal.
+PROVIDER_DETAIL = (
+    (re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.I), "<url>"),
+    (
+        re.compile(
+            r"\b(?:api[_-]?key|x-apikey|access[_-]?token|token|secret|password|passwd|authorization)"
+            r"\b[\"']?\s*[:=]\s*[\"']?(?:bearer\s+)?[^\s,;'\"]+|\bbearer\s+[^\s,;'\"]+",
+            re.I,
+        ),
+        "<secret>",
+    ),
+    (re.compile(r"(?:\b[a-z]:\\|~/|(?<![\w.~/])/)[^\s'\",;:]+", re.I), "<path>"),
+    (re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b|\[[0-9a-f:]*:[0-9a-f:]*\](?::\d+)?", re.I), "<host>"),
+    (
+        re.compile(
+            r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b(?::\d+)?|\blocalhost\b", re.I
+        ),
+        "<host>",
+    ),
+    # Opaque keys: runs of 20 or more letters, digits, underscores, and hyphens with a digit.
+    (re.compile(r"\b(?=[a-z_-]*\d)[a-z0-9_-]{20,}\b", re.I), "<secret>"),
+)
+MESSAGE_LIMIT = 200
+
+
+def failure_message(error):
+    """An exception's class and message, without URLs, paths, keys, or host names.
+
+    The message is cut to MESSAGE_LIMIT characters so that one provider cannot
+    flood the log. The patterns are a best effort for operators reading logs; no
+    status file or evidence record carries the result.
+    """
+    # A schema error's own text repeats the whole schema and instance; its message is one line.
+    message = getattr(error, "message", None)
+    text = " ".join((message if isinstance(message, str) else str(error)).split())
+    for pattern, replacement in PROVIDER_DETAIL:
+        text = pattern.sub(replacement, text)
+    text = wire.PRIVATE_TEXT.sub("<private>", text)
+    if len(text) > MESSAGE_LIMIT:
+        text = text[: MESSAGE_LIMIT - 3] + "..."
+    return type(error).__name__ + (": " + text if text else "")
 
 
 @contextmanager
@@ -408,6 +450,7 @@ class Runtime:
                     retractions=tuple(retractions),
                 )
             except Exception as error:
+                LOG.warning("Pass %s failed (%s)", name, failure_message(error))
                 self.store.input_failed(name, now, mode=mode)
                 errors[name] = type(error).__name__
         return {"changes": counts, "errors": errors, "references": reference_errors}
@@ -438,6 +481,7 @@ class Runtime:
             sink.deliver(b"", self.manifest(), context)
             self.store.acknowledged(name, cursor)
         except Exception as error:
+            LOG.warning("Output %s failed (%s)", name, failure_message(error))
             try:
                 self.store.failed(name, error)
             except Exception as status_error:

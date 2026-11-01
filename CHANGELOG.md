@@ -16,6 +16,14 @@ and evidence contract versions are tracked separately.
   poll. A skipped poll is not a failure; receiver health counts skips as
   `skipped_collections`.
 
+### Changed
+
+- A failed projection pass or output delivery now logs a warning with the
+  exception class and a short message, so operators can tell a stale receiver
+  from an unavailable one or a schema failure. URLs, absolute paths, keys,
+  tokens, and host names are removed, and the message is cut to 200 characters.
+  The JSON status line still names only the exception class.
+
 ## 0.1.0 (2026-11-01)
 
 The first public release. The package identifies itself as 0.1.0, plugins

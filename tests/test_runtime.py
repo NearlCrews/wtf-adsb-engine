@@ -405,8 +405,65 @@ class RuntimeTests(unittest.TestCase):
                 self.assertFalse(worker.is_alive())
             self.assertGreaterEqual(len(attempts), 2)
             self.assertEqual(cursor("files"), runtime.store.state()["head_sequence"])
-            self.assertEqual(len(logs.output), 1)
-            self.assertNotIn("synthetic locked database", logs.output[0])
+            # The output failure carries its sanitized message; the status failure only its class.
+            self.assertEqual(
+                [record.getMessage() for record in logs.records],
+                [
+                    "Output files failed (OperationalError: synthetic locked database)",
+                    "Cannot save output files failure (OperationalError)",
+                ],
+            )
+
+    def test_failed_pass_and_output_log_their_message_without_provider_detail(self):
+        runtime = Runtime(self.config)
+        source = runtime.pipelines[0][1][1]
+        sink = runtime.outputs[0][1]
+        secret = "sk_live_9f8e7d6c5b4a3f2e1d0c"
+        pass_error = ValueError(
+            f"Receiver unavailable at https://adsb.example.com/data/aircraft.json?token={secret}"
+            f" with token={secret}"
+        )
+        output_error = OSError(
+            f"Cannot write /srv/export/manifest.json on feeds.example.net: api_key={secret}"
+        )
+        with (
+            runtime.locked(),
+            patch.object(source, "poll", side_effect=pass_error),
+            patch.object(sink, "deliver", side_effect=output_error),
+            self.assertLogs("wtf_adsb_engine.runtime", "WARNING") as logged,
+        ):
+            result = runtime.once()
+        # The JSON status line still names only the exception class.
+        self.assertEqual(result["errors"], {"replay": "ValueError"})
+        self.assertEqual(result["outputs"], {"files": "OSError"})
+        messages = [record.getMessage() for record in logged.records]
+        self.assertEqual(
+            messages,
+            [
+                "Pass replay failed (ValueError: Receiver unavailable at <url> with <secret>)",
+                "Output files failed (OSError: Cannot write <path> on <host>: <secret>)",
+            ],
+        )
+        for detail in (secret, "example", "/data/", "/srv/", "https"):
+            self.assertFalse(any(detail in message for message in messages), detail)
+
+    def test_failure_messages_are_truncated_and_keep_plain_text(self):
+        from wtf_adsb_engine.runtime import MESSAGE_LIMIT, failure_message
+
+        self.assertEqual(
+            failure_message(ValueError("Receiver collection is stale")),
+            "ValueError: Receiver collection is stale",
+        )
+        self.assertEqual(failure_message(ValueError()), "ValueError")
+        long = failure_message(ValueError("x" * 500))
+        self.assertEqual(len(long), len("ValueError: ") + MESSAGE_LIMIT)
+        self.assertTrue(long.endswith("..."))
+        self.assertEqual(
+            failure_message(
+                ValueError("Authorization: Bearer abc.def.ghi from 192.168.1.10:30047 and localhost")
+            ),
+            "ValueError: <secret> from <host> and <host>",
+        )
 
     def test_format_state_survives_initialization_and_is_separate_from_sink_state(self):
         runtime = Runtime(self.config)
