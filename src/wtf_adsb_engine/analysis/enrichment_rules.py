@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """What the enrichment workers' evidence names and how it is read; pure rules, no network.
 
 typecheck.py asks two type registries and wind.py asks Open-Meteo, both through

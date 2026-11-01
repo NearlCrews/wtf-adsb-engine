@@ -1,4 +1,5 @@
 {
+  "note": "Shared files were extracted from a private predecessor project; the commit ids refer to its history.",
   "format": 1,
   "live_commit": "24cbf84c1fdee9cb0b86796bf5927093b43ae064",
   "modules": {
@@ -128,7 +129,7 @@
       "base": null,
       "synced": "8b6c8958b2a55cf431e96251ea301a10ad69a43c",
       "status": "written",
-      "dest_sha256": "0423a148f7de4528843944de7b5da1d6e2fd2178e23e5e811513126d775d5a71"
+      "dest_sha256": "2b79459e4eae19bb468a683fb35c76cf26c52c07172b4cddd4b31c7834c31da3"
     },
     "enrichment_rules": {
       "dest": "src/wtf_adsb_engine/analysis/enrichment_rules.py",
@@ -136,13 +137,13 @@
       "base": null,
       "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
       "status": "written",
-      "dest_sha256": "3d9c0f0634c34b3fd5afd16beb3de4e0344723613ff52b33ad5ec56ddb8321d2"
+      "dest_sha256": "335c61fd7c0d8d38da613afd7e644b8ae7197252ac27586d342a43c3da1db25f"
     }
   },
   "shared_digests": {
-    "src/wtf_adsb_engine/wire.py": "b6f311cdd28a8acd68765b636d5317b4895275724a609a17486d853ec3b5d38b",
-    "src/wtf_adsb_engine/analysis/kinds.py": "0423a148f7de4528843944de7b5da1d6e2fd2178e23e5e811513126d775d5a71",
-    "src/wtf_adsb_engine/analysis/enrichment_rules.py": "3d9c0f0634c34b3fd5afd16beb3de4e0344723613ff52b33ad5ec56ddb8321d2",
+    "src/wtf_adsb_engine/wire.py": "1113a72ec98b42f918a10c1386d85088adf3153db456dd98cbd6cfd7b227b00a",
+    "src/wtf_adsb_engine/analysis/kinds.py": "2b79459e4eae19bb468a683fb35c76cf26c52c07172b4cddd4b31c7834c31da3",
+    "src/wtf_adsb_engine/analysis/enrichment_rules.py": "335c61fd7c0d8d38da613afd7e644b8ae7197252ac27586d342a43c3da1db25f",
     "src/wtf_adsb_engine/contracts/change-batch-v1.schema.json": "c2747586fa0ffb5621a8f6f9179c0afbdce13bbb38d57a126aefbdd55b6b919a",
     "src/wtf_adsb_engine/contracts/manifest-v1.schema.json": "790421775b5d5feb5ea15c4da82a691adcbeebdbba7fe8ee73a20dab1b0c7191",
     "src/wtf_adsb_engine/contracts/observation-v1.schema.json": "f36ff9a6787dd97a0d8ecdc3a5282405a988e307ee19b7456cdd055cac1c8018",

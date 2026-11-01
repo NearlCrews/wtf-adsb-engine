@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """The kind registry: every finding kind and the named properties the kind-keyed tables derive from.
 
 A kind's properties are data only (strings, booleans, integers, tuples, and None). Wording

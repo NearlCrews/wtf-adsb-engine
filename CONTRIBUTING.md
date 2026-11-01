@@ -74,13 +74,34 @@ to [CHANGELOG.md](CHANGELOG.md). Changes to the wire contract, plugin SDK, or
 persisted state need compatibility and recovery notes. Application, SDK, and
 contract versions are separate; see [release maintenance](docs/releasing.md).
 
-`wire.py` is shared with the publisher and must stay byte-identical with its copy
-(`tests/test_shared_digests.py`). The compiled observation validator leaves
-`jsonValue`, `context.novelty`, and `media` to Python checks with the published
-rules. `tests/test_wire_validator.py` compares its verdicts with the complete
-schema over deterministic mutations, and `tools/fuzz_wire.py` does the same over
-seeded random mutations of the example batch, or of a feed directory given with
-`--feed`; it is offline and exits with status 1 on any disagreement.
+`wire.py` is a [shared file](#shared-files). Its compiled observation validator
+leaves `jsonValue`, `context.novelty`, and `media` to Python checks with the
+published rules. `tests/test_wire_validator.py` compares its verdicts with the
+complete schema over deterministic mutations, and `tools/fuzz_wire.py` does the
+same over seeded random mutations of the example batch, or of a feed directory
+given with `--feed`; it is offline and exits with status 1 on any disagreement.
+
+## Shared files
+
+These files are byte-identical with the
+[WTF ADS-B Publisher](https://github.com/OWNER/wtf-adsb-publisher) repository:
+
+- `src/wtf_adsb_engine/wire.py`
+- `src/wtf_adsb_engine/analysis/kinds.py`
+- `src/wtf_adsb_engine/analysis/enrichment_rules.py`
+- `contracts/*.schema.json` and their packaged copies in
+  `src/wtf_adsb_engine/contracts/`
+
+They are MIT-licensed like the rest of the project. A change to one is a
+coordinated contract change and must land byte for byte in both repositories.
+Afterwards, run this in each checkout:
+
+```sh
+.venv/bin/python tools/record_shared_digests.py
+```
+
+It updates the digests in `sync-state.json`, and `tests/test_shared_digests.py`
+fails until they match the files.
 
 ## Dependencies and reference data
 

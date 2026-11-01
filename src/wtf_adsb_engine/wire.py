@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Version 1 transport validation, shared as source with independent consumers.
 
 No imports of collection, plugins, publisher policy, or engine storage.
