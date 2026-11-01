@@ -43,17 +43,20 @@ initial development version and does not announce a published release.
   being held by it, and selection derives per-type ground-speed norms.
 - Evidence contract 1.1.0 adds an optional `context.type_norms` object: for
   each seasonal speed record or type speed mismatch, its type's usual ground
-  speed in these records, or null. A quiet group keeps the norm it was last
-  exported with, so the moving sample window issues no new revisions. Producers
+  speed in these records, or null. A finding's norm is frozen at its group's
+  first quiet export, so the moving sample window issues no new revisions.
+  Upgrading an existing 1.0.0 stream issues one revision for each group with a
+  norm-kind finding still in the journal view. Producers
   write 1.1.0; readers accept 1.0.0 and 1.1.0 and refuse other versions by name.
   The `wtf-adsb.collection.v1` profile is unchanged.
-- Python 3.14.9 (including the container base image), Ruff 0.17.2 and NumPy
+- Python 3.14.9 (including the container base image), Ruff 0.17.2, and NumPy
   2.5.4.
 
 ### Fixed
 
-- Container build tooling uses uv 0.12.24 and development checks use Ruff 0.17.0,
-  verified against their stable upstream releases on 9 October 2026.
+- Container build tooling uses uv 0.12.24, verified against its stable upstream
+  release on 9 October 2026. (Development checks then used Ruff 0.17.0; see
+  Changed for the current pin.)
 - Repeated daily novelty context shares memory within a projection. Runtime
   copying preserves that sharing while isolating each observation's enrichment.
 - Reference loading enforces its size bound during the read. Invalid oversized

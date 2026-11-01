@@ -678,8 +678,8 @@ class _TypeNorms:
     """Per-finding type speed norms (selection.type_norm) for curation.NORM_KINDS findings.
 
     The sample rows are read once per export, as autopilot.collect reads them, and the
-    contexts only when a norm-kind finding needs them. With an identity sidecar, a quiet
-    group's finding keeps the norm sent last pass (IdentityStore.type_norm).
+    contexts only when a norm-kind finding needs them. With an identity sidecar, a finding
+    keeps the norm of its group's first quiet export (IdentityStore.type_norm).
     """
 
     def __init__(self, connection, rows, identities, now):

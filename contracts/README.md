@@ -27,9 +27,11 @@ the structural check. The profile stays `wtf-adsb.collection.v1`.
 record or a type speed mismatch) to its type's usual ground speed in these
 records, or to null when the records hold too few addresses or days. A norm has
 exactly `low` and `high` (whole knots, rounded to five), `phase` (`climb`,
-`descent` or `level`), `band_floor_ft` and `band_ceiling_ft`, `addresses`,
-`days` and `window_days`. Every key must name a finding of the same group. A
-group without a norm-kind finding omits the object.
+`descent`, or `level`), `band_floor_ft` and `band_ceiling_ft`, `addresses`,
+`days`, and `window_days`. The wire validator requires every key to name a
+finding of the same group; it does not know finding kinds, so limiting the keys
+to norm-kind findings is the producer's rule. A group without a norm-kind
+finding omits the object.
 
 The wire validator applies structural schemas and then semantic checks.
 JSON Schema cannot verify canonical evidence digests, contiguous sequence

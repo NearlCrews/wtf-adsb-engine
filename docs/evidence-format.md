@@ -67,7 +67,7 @@ The collection observation has these fields:
 | Field | Content |
 | --- | --- |
 | `group` | Stable group UUID, observation interval and an array of projected findings |
-| `context` | Bounded novelty counts, the named compatibility policy profile and, since 1.1.0, per-finding type norms |
+| `context` | Bounded novelty counts, the named compatibility policy profile, and, since 1.1.0, per-finding type norms |
 | `media` | Aircraft track parts keyed by finding UUID, with timestamped positions and available altitude/speed references |
 | `extensions` | Optional namespaced, versioned payloads approved by local schema configuration |
 
@@ -86,11 +86,15 @@ samples before the newest, excluding the finding's own address. It needs 20 othe
 addresses over 14 days; otherwise the entry is null. The object is keyed by
 finding ID and is absent when the group has no such finding, so other
 observations are unchanged from 1.0.0. A norm is a population figure from one
-collection, never a limit or a claim about one aircraft. Once a group is quiet
-(30 minutes without reports) its findings keep the norm they were last exported
-with, so the moving sample window does not issue a new revision on every pass;
-the identity sidecar remembers that value, and a replacement restored after
-source retention keeps the norms of its saved evidence.
+collection, never a limit or a claim about one aircraft. While a group is
+active its norms follow the sample window. The first export after the group turns
+quiet (30 minutes without reports) freezes each finding's norm in the identity
+sidecar with the type, phase, band, and address it read; later exports reuse it
+while those stay the same, so the moving window does not issue a new revision on
+every pass. A replacement restored after source retention keeps the norms of its
+saved evidence. Upgrading an existing 1.0.0 stream issues one revision for each
+group with a norm-kind finding that is still in the journal view; a fresh stream
+is unaffected.
 
 This is a compatibility profile for the extracted analysis. Its named policy
 context preserves the existing grouping and validation semantics without making

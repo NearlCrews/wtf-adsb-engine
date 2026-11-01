@@ -4,8 +4,8 @@ Legacy row numbers stay inside this sidecar. Public finding/group identities are
 random UUIDs. Membership and saved encounter aliases preserve identities when a
 correction changes an interval. Witnessed membership merges and splits issue
 explicit durable supersessions; simple interval corrections keep their IDs.
-The sidecar also keeps each norm-kind finding's last exported type norm, which a
-quiet group reuses (export.py).
+The sidecar also keeps each norm-kind finding's type norm from its group's first
+quiet export, which later exports reuse (export.py).
 """
 
 import json
@@ -140,23 +140,28 @@ class IdentityStore:
         return identity
 
     def type_norm(self, finding_id, inputs, quiet, compute):
-        """A finding's type norm: the one saved last pass when its group is quiet and the
-        norm reads the same type, phase, band, and address; otherwise compute(), saved for
-        the next pass. A drifting sample window then changes no quiet group's revision."""
+        """A finding's type norm, frozen at its group's first quiet export.
+
+        While the group is active, compute() and save nothing. Once it is quiet, reuse the
+        saved norm while it reads the same type, phase, band, and address; otherwise
+        compute(), save it with those inputs, and reuse it from then on. A drifting sample
+        window then changes no quiet group's revision.
+        """
+        self.norm_findings.add(finding_id)
+        if not quiet:
+            return compute()
         key = _canonical(inputs)
         row = self.db.execute(
             "SELECT inputs,norm FROM type_norms WHERE source=? AND finding_id=?",
             (self.source_instance, finding_id),
         ).fetchone()
-        self.norm_findings.add(finding_id)
-        if quiet and row is not None and row["inputs"] == key:
+        if row is not None and row["inputs"] == key:
             return json.loads(row["norm"])
         norm = compute()
-        if row is None or (row["inputs"], row["norm"]) != (key, _canonical(norm)):
-            self.db.execute(
-                "INSERT OR REPLACE INTO type_norms VALUES (?,?,?,?)",
-                (self.source_instance, finding_id, key, _canonical(norm)),
-            )
+        self.db.execute(
+            "INSERT OR REPLACE INTO type_norms VALUES (?,?,?,?)",
+            (self.source_instance, finding_id, key, _canonical(norm)),
+        )
         return norm
 
     def retain_type_norms(self):

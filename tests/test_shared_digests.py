@@ -11,11 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ("change-batch-v1.schema.json", "manifest-v1.schema.json", "observation-v1.schema.json")
-# Each shared file, and the resync task that adds it when it is not here yet.
+# Each shared file, and the resync task that adds it when it is not here yet (None: required).
 SHARED = {
     "src/wtf_adsb_engine/wire.py": None,
-    "src/wtf_adsb_engine/analysis/kinds.py": "Task 2 of the 2026-10-31 split resync (engine)",
-    "src/wtf_adsb_engine/analysis/enrichment_rules.py": "Task 2 of the 2026-10-31 split resync (engine)",
+    "src/wtf_adsb_engine/analysis/kinds.py": None,
+    "src/wtf_adsb_engine/analysis/enrichment_rules.py": None,
     **{f"src/wtf_adsb_engine/contracts/{name}": None for name in SCHEMAS},
     **{f"contracts/{name}": None for name in SCHEMAS},
 }

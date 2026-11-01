@@ -200,19 +200,17 @@ class ExportedNorms(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "names no finding"):
             wire.validate_observation(stray)
 
-    def move_window(self):
-        # Forty days later the old samples leave the 30-day window and faster ones replace them.
+    def move_window(self, days=40, base=500, prefix="d"):
+        # Later, the old samples leave the 30-day window and faster ones replace them.
+        speeds = [base + n * 2 for n in range(25)]
         with app.connect(self.path) as db:
-            samples(
-                db,
-                "B738",
-                "level",
-                3,
-                [500 + n * 2 for n in range(25)],
-                days=20,
-                end=NOW + 40 * DAY,
-                prefix="d",
-            )
+            samples(db, "B738", "level", 3, speeds, days=20, end=NOW + days * DAY, prefix=prefix)
+
+    def saved(self, identifier):
+        """The norm the sidecar holds for a finding, or None when it holds none."""
+        with closing(sqlite3.connect(self.sidecar)) as db:
+            row = db.execute("SELECT norm FROM type_norms WHERE finding_id=?", (identifier,)).fetchone()
+        return json.loads(row[0]) if row else None
 
     def test_a_quiet_group_keeps_its_norm_while_the_window_moves(self):
         before = export.snapshot_state(self.path, QUIET, identity_path=self.sidecar)["observations"]
@@ -225,15 +223,28 @@ class ExportedNorms(unittest.TestCase):
         saved, kept = self.norms(later, self.sidecar)["seasonal_speed_record:B738"]
         self.assertEqual((fresh[unsaved]["low"], kept[saved]["low"]), (505, 425))
 
-    def test_an_active_group_follows_the_window(self):
+    def test_an_active_group_follows_the_window_and_saves_nothing(self):
         active = NOW + 100
-        _, first = self.norms(active, self.sidecar)["seasonal_speed_record:B738"]
+        identifier, first = self.norms(active, self.sidecar)["seasonal_speed_record:B738"]
         self.move_window()
-        identifier, second = self.norms(active, self.sidecar)["seasonal_speed_record:B738"]
+        _, second = self.norms(active, self.sidecar)["seasonal_speed_record:B738"]
         self.assertEqual((first[identifier]["low"], second[identifier]["low"]), (425, 505))
-        # Once quiet, it keeps the value it last sent.
+        self.assertIsNone(self.saved(identifier))
+
+    def test_the_first_quiet_export_freezes_the_norm(self):
+        identifier, active = self.norms(NOW + 100, self.sidecar)["seasonal_speed_record:B738"]
+        self.move_window()
+        self.assertIsNone(self.saved(identifier))
+        # The first quiet export computes the norm of its own window and saves it.
         _, quiet = self.norms(NOW + 40 * DAY, self.sidecar)["seasonal_speed_record:B738"]
-        self.assertEqual(quiet, second)
+        self.assertEqual((active[identifier]["low"], quiet[identifier]["low"]), (425, 505))
+        self.assertEqual(self.saved(identifier), quiet[identifier])
+        # A later export with a moved window reuses it.
+        self.move_window(days=80, base=600, prefix="e")
+        later = NOW + 80 * DAY
+        _, kept = self.norms(later, self.sidecar)["seasonal_speed_record:B738"]
+        unsaved, fresh = self.norms(later)["seasonal_speed_record:B738"]
+        self.assertEqual((kept[identifier]["low"], fresh[unsaved]["low"]), (505, 605))
 
     def test_a_changed_type_is_not_given_the_saved_norm(self):
         self.norms(QUIET, self.sidecar)
