@@ -5,12 +5,15 @@ inputs can use the ordinary normalized snapshot protocol instead. Collection
 and enrichment use their own durable journal, never the core outbox connection.
 """
 
+import logging
 import threading
 import time
 from dataclasses import replace
 
 from ..plugin_api.v1 import InputBatch, Lifecycle, PluginSpec
 from .io import ReceiverInput, options
+
+LOG = logging.getLogger(__name__)
 
 
 class ReceiverService(Lifecycle):
@@ -47,11 +50,11 @@ class ReceiverService(Lifecycle):
         )
         self.stop = threading.Event()
         self.workers = []
-        self.error = None
+        # The latest failed attempt as (exception class name, analysis fault), or None.
+        self.failure = None
         self.enrichment_error = None
         self.collector = None
         self.last_attempt = None
-        self.last_success = None
 
     def initialize(self, context):
         from ..analysis.flightaware import Settings, money
@@ -80,14 +83,21 @@ class ReceiverService(Lifecycle):
             worker.start()
 
     def _collect(self):
+        from ..analysis.app import CollectorFault
+
         try:
             now = time.time()
             batch = self.input.poll(None, replace(self.context, now=now))
             self.collector.process(batch.records[0]["snapshot"], wall_now=now)
-            self.error = None
-            self.last_success = time.time()
+            if self.failure:
+                LOG.warning("Receiver collection recovered after %s", self.failure[0])
+            self.failure = None
         except Exception as error:
-            self.error = type(error).__name__
+            failure = (type(error).__name__, isinstance(error, CollectorFault))
+            # Tolerated attempts leave no other trace; log each new failure class once.
+            if failure != self.failure:
+                LOG.warning("Receiver collection attempt failed (%s)", failure[0])
+            self.failure = failure
         finally:
             self.last_attempt = time.time()
 
@@ -109,16 +119,17 @@ class ReceiverService(Lifecycle):
         return self.settings.get("max_age_seconds", 120)
 
     def poll(self, checkpoint, context):
+        failure = self.failure
         health = self.collector.health()
-        if health["detector_errors"]:
+        if (failure and failure[1]) or health["detector_errors"]:
             raise ValueError("Receiver analysis is incomplete")
-        # The committed journal's age decides availability. One failed attempt between
-        # successful ones (a busy journal, a slow receiver) keeps the fresh evidence usable
-        # instead of failing the whole projection pass until the next attempt succeeds.
+        # The committed journal's age decides availability. Failed attempts (a busy
+        # journal, a slow receiver) keep the committed evidence usable while it is at most
+        # max_age_seconds old instead of failing the whole projection pass each time.
         watermark = health["last_receiver_timestamp"]
         if watermark is None or not 0 <= context.now - watermark <= self.max_age:
             raise ValueError(
-                "Receiver collection is unavailable" if self.error else "Receiver collection is stale"
+                "Receiver collection is unavailable" if failure else "Receiver collection is stale"
             )
         return InputBatch(
             ({"type": "legacy_journal", "path": str(self.collector.path)},), watermark, watermark
@@ -126,11 +137,14 @@ class ReceiverService(Lifecycle):
 
     def health(self):
         now = time.time()
-        fresh = self.last_success is not None and 0 <= now - self.last_success <= self.max_age
+        failure = self.failure
+        # The same committed receiver timestamp that poll() reads from the journal.
+        committed = self.collector.detector.last_poll if self.collector else 0
+        fresh = committed > 0 and 0 <= now - committed <= self.max_age
         state = "ready"
-        if self.error and not fresh:
+        if failure and (failure[1] or not fresh):
             state = "failed"
-        elif self.error or self.enrichment_error:
+        elif failure or self.enrichment_error:
             state = "degraded"
         return {
             "alive": bool(self.workers)
@@ -138,7 +152,7 @@ class ReceiverService(Lifecycle):
             and self.last_attempt is not None
             and 0 <= now - self.last_attempt <= 180,
             "state": state,
-            "collection_error": self.error,
+            "collection_error": failure[0] if failure else None,
             "enrichment_error": self.enrichment_error,
         }
 

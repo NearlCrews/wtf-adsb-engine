@@ -116,10 +116,13 @@ initial development version and does not announce a published release.
   full".
 - The continuous receiver input no longer fails a projection pass because its
   latest ten-second collection attempt failed. The committed journal's age
-  decides availability, as it already decided staleness, so one busy-journal or
-  slow-receiver attempt between successful ones leaves readiness intact. Health
-  reports such an attempt as degraded and reports failed only once the last
-  success is older than the configured maximum age.
+  decides availability, as it already decided staleness, so busy-journal or
+  slow-receiver attempts leave readiness intact while the last committed
+  snapshot is at most `max_age_seconds` old. A collector fault still fails the
+  next pass at once. The service logs a warning with the exception class when
+  attempts start failing and another when they recover; its plugin health
+  reports a tolerated attempt as degraded and reports failed for a collector
+  fault or once the last commit is older than that age.
 
 ### Known limits
 

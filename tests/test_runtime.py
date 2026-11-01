@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from wtf_adsb_engine import wire
+from wtf_adsb_engine.analysis.app import CollectorFault
 from wtf_adsb_engine.builtins.io import FileOutput, ReplayInput
 from wtf_adsb_engine.builtins.receiver import ReceiverService
 from wtf_adsb_engine.cli import main
@@ -564,31 +565,56 @@ class RuntimeTests(unittest.TestCase):
             finally:
                 service.close()
         self.assertGreater(len(calls), 1)
-        self.assertIsNone(service.error)
+        self.assertIsNone(service.failure)
 
-    def test_receiver_tolerates_one_failed_attempt_while_the_journal_is_fresh(self):
+    def test_receiver_tolerates_failed_attempts_while_the_journal_is_fresh(self):
         service = ReceiverService({"url": "http://127.0.0.1/fixture", "poll_seconds": 60})
         context = Context("receiver", self.root, "fixture", time.time())
+        failure = []
 
         def poll(checkpoint, current):
+            if failure:
+                raise failure[0]
             return InputBatch(({"snapshot": {"now": current.now, "aircraft": []}},), current.now, current.now)
 
         with patch.object(service.input, "poll", side_effect=poll):
             try:
                 service.initialize(context)
                 self.assertEqual(service.health()["state"], "ready")
-                service.error = "OperationalError"
+                committed = service.collector.detector.last_poll
+                failure.append(sqlite3.OperationalError("database is locked"))
+                with self.assertLogs("wtf_adsb_engine.builtins.receiver", "WARNING") as logged:
+                    service._collect()
+                    service._collect()
+                self.assertEqual(
+                    [record.getMessage() for record in logged.records],
+                    ["Receiver collection attempt failed (OperationalError)"],
+                )
+                self.assertEqual(service.collector.detector.last_poll, committed)
                 batch = service.poll(None, replace(context, now=time.time()))
-                self.assertIsNotNone(batch.watermark)
-                self.assertEqual(service.health()["state"], "degraded")
-                self.assertEqual(service.health()["collection_error"], "OperationalError")
+                self.assertEqual(batch.watermark, committed)
+                health = service.health()
+                self.assertEqual(
+                    (health["state"], health["collection_error"]), ("degraded", "OperationalError")
+                )
                 with self.assertRaisesRegex(ValueError, "unavailable"):
-                    service.poll(None, replace(context, now=time.time() + 121))
-                service.last_success = time.time() - 121
+                    service.poll(None, replace(context, now=committed + 121))
+                # The last commit is the detector's in-memory stamp; age it past max_age_seconds.
+                service.collector.detector.last_poll = committed - 121
                 self.assertEqual(service.health()["state"], "failed")
-                service.error = None
-                with self.assertRaisesRegex(ValueError, "stale"):
-                    service.poll(None, replace(context, now=time.time() + 121))
+                failure[0] = CollectorFault({"detector": "RuntimeError"})
+                service._collect()
+                self.assertEqual(service.health()["collection_error"], "CollectorFault")
+                with self.assertRaisesRegex(ValueError, "incomplete"):
+                    service.poll(None, replace(context, now=time.time()))
+                failure.clear()
+                with self.assertLogs("wtf_adsb_engine.builtins.receiver", "WARNING") as logged:
+                    service._collect()
+                self.assertEqual(
+                    logged.records[-1].getMessage(), "Receiver collection recovered after CollectorFault"
+                )
+                self.assertIsNone(service.failure)
+                self.assertEqual(service.health()["state"], "ready")
             finally:
                 service.close()
 
