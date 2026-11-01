@@ -21,6 +21,7 @@ from . import (
     airport_context,
     curation,
     flightaware,
+    kinds,
     maneuvers,
     reference,
     rules,
@@ -126,29 +127,14 @@ GROUND_SPEED_KT = 80
 GROUND_CONFIRM_SECONDS = 20
 GROUND_LOOKBACK_SECONDS = 60
 GROUND_AIRBORNE_FLOOR_FT = 2000
-# Identity kinds are saved once per aircraft per UTC day.
-DAILY_KINDS = frozenset(curation.IDENTITY_KINDS | {"identity_conflict", "emitter_type_mismatch"})
+# Identity kinds, an identity conflict, and an emitter mismatch are saved once per aircraft per UTC day.
+DAILY_KINDS = kinds.where(daily_row=True)
 # Window-based shapes of one aircraft: a later evaluation can see less of the same
 # shape, so the saved row keeps its largest measurement (state changes and new
 # review flags are still recorded). A multi-aircraft group always takes the latest.
-BEST_WINDOW_KINDS = frozenset(
-    {
-        "course_reversal",
-        "descending_spiral",
-        "altitude_oscillation",
-        "prolonged_holding",
-        "hovering",
-        "parallel_passes",
-        "survey_grid",
-        "thermal_soaring",
-        "extreme_turn_rate",
-    }
-)
+BEST_WINDOW_KINDS = kinds.where(best_window=True)
 # Rows saved before a circle or survey grid verified that it then covers.
-ABSORBED_KINDS = {
-    "circling": ("course_reversal", "loitering"),
-    "survey_grid": ("course_reversal", "parallel_passes"),
-}
+ABSORBED_KINDS = kinds.table("absorbs")
 # Type-envelope and rated-limit readings need rules.MIN_REPORTS coherent reports
 # over rules.MIN_REPORT_SECONDS (the owner publishes no one-report stories); the
 # numeric spotting kinds need four over 30 s.
@@ -1845,13 +1831,13 @@ class Detector:
         else:
             info = (shape.evidence or {}).get("maneuver") or {}
             start, end = number(info.get("started_at")), number(info.get("ended_at"))
-        kinds = ABSORBED_KINDS[shape.kind]
+        absorbed = ABSORBED_KINDS[shape.kind]
         if start is None or end is None or session is None:
             return
         rows = db.execute(
-            f"""SELECT id,kind,evidence,last_seen FROM events WHERE hex=? AND kind IN ({",".join("?" * len(kinds))})
+            f"""SELECT id,kind,evidence,last_seen FROM events WHERE hex=? AND kind IN ({",".join("?" * len(absorbed))})
             AND origin=? AND last_seen>=? AND first_seen<=? AND json_extract(evidence,'$.encounter_start')=?""",
-            (address, *kinds, LIVE_ORIGIN, start - PATTERN_GAP, end + PATTERN_GAP, session),
+            (address, *absorbed, LIVE_ORIGIN, start - PATTERN_GAP, end + PATTERN_GAP, session),
         ).fetchall()
         for row in rows:
             evidence = json.loads(row["evidence"])
@@ -2244,27 +2230,13 @@ class Detector:
         pending["recorded"] = True
         return event_id
 
-    # The report field each numeric or envelope finding measures.
-    NUMERIC_FIELDS = {
-        "fast": ("gs",),
-        "high": ("alt_baro",),
-        "vertical": ("baro_rate",),
-        "wind_boost": ("gs", "tas"),
-        "altitude_gap": ("alt_baro", "alt_geom"),
-        "distant": ("lat", "lon"),
-        "type_speed_mismatch": ("gs",),
-        "type_altitude_mismatch": ("alt_baro",),
-        "above_rated_altitude": ("alt_baro",),
-        # Every field the airspeed estimate reads: ground speed and track against
-        # the wind, pressure altitude for the conversion, and a reported true
-        # airspeed when the aircraft sends one. An indirect source for any of
-        # them flags the confirmation.
-        "above_rated_speed": ("gs", "track", "alt_baro", "tas"),
-    }
+    # The report fields each numeric or envelope finding measures (kinds names why a rated
+    # speed lists four).
+    NUMERIC_FIELDS = kinds.table("numeric_fields")
 
     # Kinds whose readings may spread up to 2,000 ft, and whose sign must hold.
-    WIDE_SPREAD_KINDS = frozenset({"high", "altitude_gap", "type_altitude_mismatch", "above_rated_altitude"})
-    SIGNED_KINDS = frozenset({"vertical"})
+    WIDE_SPREAD_KINDS = kinds.where(wide_spread=True)
+    SIGNED_KINDS = kinds.where(signed=True)
 
     @classmethod
     def _numeric_samples(cls, pending, a, finding, now):

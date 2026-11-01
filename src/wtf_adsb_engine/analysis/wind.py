@@ -27,6 +27,8 @@ from urllib.parse import urlencode
 
 from . import limits, reference, registry_http
 from .curation import utc_day
+from .enrichment_rules import WIND_ATTRIBUTION as ATTRIBUTION
+from .enrichment_rules import WIND_SOURCE as SOURCE
 from .rules import (
     GROUND_SPEED_KINDS,
     MIN_REPORT_SECONDS,
@@ -38,8 +40,6 @@ from .rules import (
 
 NAME = "wind"
 BASE = "https://api.open-meteo.com/v1/forecast"
-ATTRIBUTION = "Weather data by Open-Meteo.com (CC BY 4.0)"
-SOURCE = "open-meteo"
 MAX_BYTES = 512 * 1024
 LEVELS = (1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100)
 GRID = 0.25
@@ -481,11 +481,11 @@ def flag_ground_speed(db, event):
     session = event["evidence"].get("encounter_start")
     if session is None:
         return
-    kinds = sorted(GROUND_SPEED_KINDS)
+    speed_kinds = sorted(GROUND_SPEED_KINDS)
     rows = db.execute(
-        f"""SELECT id,evidence FROM events WHERE hex=? AND kind IN ({",".join("?" * len(kinds))})
+        f"""SELECT id,evidence FROM events WHERE hex=? AND kind IN ({",".join("?" * len(speed_kinds))})
         AND origin=? AND json_valid(evidence) AND json_extract(evidence,'$.encounter_start')=?""",
-        (event["hex"], *kinds, LIVE_ORIGIN, session),
+        (event["hex"], *speed_kinds, LIVE_ORIGIN, session),
     ).fetchall()
     for row in rows:
         evidence = json.loads(row["evidence"])

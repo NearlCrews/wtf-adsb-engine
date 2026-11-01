@@ -7,13 +7,16 @@ import threading
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-from . import curation, typecheck
+from . import curation, kinds, typecheck
 from .curation import ENVELOPE_KINDS, IDENTITY_COOLDOWN, IDENTITY_KINDS, RECORD_KINDS, _mapping
 from .rules import (
+    ARCHIVE_SQUAWK_PREFIX,
     COVERAGE_SECONDS,
+    LIVE_SQUAWK_PREFIX,
     MAX_PLAUSIBLE_ALT_FT,
     RATED_KINDS,
     SEASON_SUSTAINED_SECONDS,
+    SQUAWK_PREFIXES,
     WATCH_TYPES,
     number,
     performance_context,
@@ -34,13 +37,21 @@ QUIET_SECONDS = 1800
 # type envelope (curation.ENVELOPE_KINDS) or a type's certified limits
 # (rules.RATED_KINDS), and season records (curation.RECORD_KINDS), are assessed
 # from their own saved windows instead.
-NUMERIC_KINDS = {"fast", "high", "vertical", "wind_boost", "altitude_gap", "distant"}
-NOVELTY_KINDS = {"first_type_here", "first_country_here", "notable_variant"}
+NUMERIC_KINDS = set(kinds.where(numeric=True))
+NOVELTY_KINDS = set(kinds.where(novelty=True))
 VERDICTS = {"keep", "routine", "bad_data"}
 # rules.performance_thresholds without a learned type profile.
 DEFAULT_SPEED = 600
 # A context baseline may fall below the type-level threshold only after this many days.
 CONTEXT_DAYS = 14
+# A context's spotting threshold (performance_profiles) needs this many addresses in its phase
+# and band, and a type's speed norm (type_norm) as many besides the story's own.
+CONTEXT_MIN_ADDRESSES = 20
+NORM_MIN_ADDRESSES = CONTEXT_MIN_ADDRESSES
+# Samples older than this, before the newest sample, are left out of profiles and norms.
+NORM_WINDOW_DAYS = 30
+# The lowest altitude a performance sample is taken at.
+SAMPLE_FLOOR_FT = 5000
 _SELECTION_LOCK = threading.RLock()
 
 
@@ -64,7 +75,79 @@ def _threshold(values, margin, low, high, step):
     return _rounded(values[math.ceil(len(values) * 0.9) - 1], margin, low, high, step)
 
 
-def performance_profiles(db):
+def sample_rows(db):
+    """(typecode, phase, band, address, encounter, median) for every usable sample in the
+    NORM_WINDOW_DAYS window, or None without a sample table."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='performance_samples'").fetchone():
+        return None
+    rows = []
+    for typecode, phase, band, address, encounter, values in db.execute(
+        "SELECT typecode,phase,altitude_band,hex,encounter,values_json FROM performance_samples "
+        "WHERE updated_at >= (SELECT MAX(updated_at)-? FROM performance_samples)",
+        (NORM_WINDOW_DAYS * 86400,),
+    ):
+        values = json.loads(values)
+        if len(values) < 4:
+            continue
+        rows.append((typecode, phase, band, address, encounter, statistics.median(values)))
+    return rows
+
+
+def _contexts(rows):
+    contexts = defaultdict(list)
+    for typecode, phase, band, address, encounter, median in rows:
+        contexts[(typecode, phase, band)].append((address, encounter, median))
+    return dict(contexts)
+
+
+def norm_contexts(db, rows=None):
+    """{(typecode, phase, band): [(address, encounter, median), ...]} from the sample rows, read
+    here unless a caller passes the ones it read."""
+    return _contexts((sample_rows(db) if rows is None else rows) or ())
+
+
+def _context_stats(entries):
+    """(encounters per address, (median, weight) pairs with each address weighted once, UTC days)
+    for one context's (address, encounter, median) entries."""
+    by_address = Counter(address for address, _, _ in entries)
+    weighted = [(median, 1 / by_address[address]) for address, _, median in entries]
+    days = {
+        datetime.fromtimestamp(encounter, timezone.utc).date()
+        for _, encounter, _ in entries
+        if number(encounter) is not None
+    }
+    return by_address, weighted, days
+
+
+def type_norm(contexts, typecode, phase_band, exclude_address):
+    """The usual ground speed of a type in one phase and altitude band, as a block, or None.
+
+    Tenth and ninetieth percentiles of per-address encounter medians, each address
+    weighted once, rounded to five knots. It needs NORM_MIN_ADDRESSES addresses besides
+    the story's own over CONTEXT_DAYS days. A population figure from these records,
+    never a limit or a claim about one aircraft.
+    """
+    if not typecode or not phase_band:
+        return None
+    phase, band = phase_band
+    entries = [item for item in contexts.get((typecode, phase, band), ()) if item[0] != exclude_address]
+    by_address, weighted, days = _context_stats(entries)
+    if len(by_address) < NORM_MIN_ADDRESSES or len(days) < CONTEXT_DAYS:
+        return None
+    return {
+        "low": round(_weighted_percentile(weighted, 0.1) / 5) * 5,
+        "high": round(_weighted_percentile(weighted, 0.9) / 5) * 5,
+        "phase": phase,
+        # Samples start at SAMPLE_FLOOR_FT, so the lowest band does too.
+        "band_floor_ft": max(SAMPLE_FLOOR_FT, int(band) * 10000),
+        "band_ceiling_ft": (int(band) + 1) * 10000,
+        "addresses": len(by_address),
+        "days": len(days),
+        "window_days": NORM_WINDOW_DAYS,
+    }
+
+
+def performance_profiles(db, rows=None):
     """Learn from quality-filtered direct samples, using robust per-address values.
 
     These are local spotting thresholds, never published aircraft limits. Each
@@ -73,21 +156,17 @@ def performance_profiles(db):
     median. Its altitude uses each sampled address's maximum, capped by the highest
     altitude band of its direct samples, so a solver or decoder spike cannot set
     it. The 90th percentile avoids letting one extreme address set a threshold.
+    `rows` are sample_rows(db) when a caller has read them.
     """
     profiles = {}
-    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='performance_samples'").fetchone():
+    rows = sample_rows(db) if rows is None else rows
+    if rows is None:
         return profiles
-    speeds, bands, contexts = defaultdict(dict), defaultdict(dict), defaultdict(list)
-    for typecode, phase, band, address, encounter, values in db.execute(
-        "SELECT typecode,phase,altitude_band,hex,encounter,values_json FROM performance_samples WHERE updated_at >= (SELECT MAX(updated_at)-2592000 FROM performance_samples)"
-    ):
-        values = json.loads(values)
-        if len(values) < 4:
-            continue
-        median = statistics.median(values)
+    speeds, bands = defaultdict(dict), defaultdict(dict)
+    for typecode, _phase, band, address, _encounter, median in rows:
         speeds[typecode][address] = max(median, speeds[typecode].get(address, median))
         bands[typecode][address] = max(band, bands[typecode].get(address, band))
-        contexts[(typecode, phase, band)].append((address, encounter, median))
+    contexts = _contexts(rows)
     altitudes = defaultdict(list)
     for typecode, address, altitude in db.execute(
         "SELECT typecode,hex,max_alt FROM aircraft WHERE typecode<>'' AND hex NOT LIKE '~%'"
@@ -108,19 +187,11 @@ def performance_profiles(db):
         if profile:
             profiles[typecode] = profile
     for (typecode, phase, band), entries in contexts.items():
-        encounters_by_address = Counter(address for address, _, _ in entries)
-        if len(encounters_by_address) < 20:
+        encounters_by_address, weighted, days = _context_stats(entries)
+        if len(encounters_by_address) < CONTEXT_MIN_ADDRESSES:
             continue
         # Each address has the same total weight, however many encounters it has.
-        value = _weighted_percentile(
-            [(median, 1 / encounters_by_address[address]) for address, _, median in entries], 0.95
-        )
-        threshold = _rounded(value, 50, 200, 700, 25)
-        days = {
-            datetime.fromtimestamp(encounter, timezone.utc).date()
-            for _, encounter, _ in entries
-            if number(encounter) is not None
-        }
+        threshold = _rounded(_weighted_percentile(weighted, 0.95), 50, 200, 700, 25)
         if len(days) < CONTEXT_DAYS:
             # A few days of one wind pattern cannot lower the type-level threshold.
             threshold = max(threshold, profiles.get(typecode, {}).get("gs", DEFAULT_SPEED))
@@ -142,7 +213,7 @@ def observe_performance(db, aircraft, stamp, encounter):
         or aircraft["hex"].startswith("~")
         or speed is None
         or not 100 <= speed <= 750
-        or not 5000 <= aircraft["alt_baro"] <= MAX_PLAUSIBLE_ALT_FT
+        or not SAMPLE_FLOOR_FT <= aircraft["alt_baro"] <= MAX_PLAUSIBLE_ALT_FT
     ):
         return
     if quality(
@@ -273,20 +344,20 @@ def _contextual_spike(event):
     )
 
 
-# Kinds scored by kind alone, with the reason they carry.
-FIXED_SCORES = {
-    "identity_conflict": (
-        78,
-        "Deterministic identity checks disagree; this is a data finding, not an identity claim",
+# Kinds scored by kind alone, with the reason they carry, in their recorded order.
+FIXED_SCORES = kinds.table(
+    "fixed_score",
+    order=(
+        "identity_conflict",
+        "military",
+        "database_watch",
+        "unusual_emitter",
+        "vertical",
+        "wind_boost",
+        "altitude_gap",
+        "distant",
     ),
-    "military": (55, "Military classification alone is a routine identity tag"),
-    "database_watch": (45, None),
-    "unusual_emitter": (65, None),
-    "vertical": (75, None),
-    "wind_boost": (75, None),
-    "altitude_gap": (75, None),
-    "distant": (30, None),
-}
+)
 # A novelty claim (first sighting, notable variant) needs two reports at least 8 s apart.
 NOVELTY_MIN_HITS = 2
 NOVELTY_MIN_SECONDS = 8
@@ -368,7 +439,7 @@ def assess(event, profiles=None, *, independent=False):
         resident = (aircraft_days or 0) > 2 or (type_days or 0) > 3
         score = 35 if resident else 70
         reasons.append("Repeat days matter as well as the number of aircraft addresses")
-    elif kind.startswith(("special_squawk_", "archive_squawk_")):
+    elif kind.startswith(SQUAWK_PREFIXES):
         # Only a confirmed live episode below can make a status story-eligible.
         score, review, private = 60, True, True
         reasons.append(
@@ -440,14 +511,14 @@ def assess(event, profiles=None, *, independent=False):
         ):
             review = True
             reasons.append("Consecutive above-threshold reports have not been established")
-        score = 95 if kind.startswith("special_squawk_") else 80
+        score = 95 if kind.startswith(LIVE_SQUAWK_PREFIX) else 80
         private = private and review
         if review:
             score = min(score, 60)
             reasons.extend(episode.get("quality_flags", []))
             if episode.get("confirmed") is not True:
                 reasons.append("Episode has not met its confirmation window")
-    if kind.startswith("archive_squawk_"):
+    if kind.startswith(ARCHIVE_SQUAWK_PREFIX):
         score, review, private = min(score, 60), True, True
     tags = curation.context_tags(evidence)
     if kind in curation.CIRCUIT_KINDS and (evidence.get("airport_context") or tags & curation.AIRPORT_TAGS):
@@ -500,8 +571,9 @@ def publishable(source):
     A Keep vote never certifies uncertain telemetry, so a rejected verdict or any
     quality flag refuses it. Archived labels never confirm a status, and a live
     status needs its confirmed episode (8 s and two reports). A second source
-    that disagrees about the type, or none for a performance kind, refuses it
-    through the review gates; a check still pending is a selection hold
+    that disagrees about the type (unless a mismatch story names it), or none
+    for a performance kind, refuses it through the review gates; a check still
+    pending is a selection hold
     (curation.type_hold), not a refusal, so a released story is never
     unpublished for a check that has not run. The rest is assess() without the
     vote: story eligible, no review, and not context only.
@@ -516,7 +588,7 @@ def publishable(source):
         or raw.get("quality_flags")
     ):
         return False
-    if source["kind"].startswith("archive_squawk_"):
+    if source["kind"].startswith(ARCHIVE_SQUAWK_PREFIX):
         return False
     # A kind the story engine cannot render has no unattended story. Imported
     # here so the collector container never loads the story engine.
@@ -524,7 +596,7 @@ def publishable(source):
 
     if source["kind"] not in STORY_KINDS:
         return False
-    if source["kind"].startswith("special_squawk_") and not (
+    if source["kind"].startswith(LIVE_SQUAWK_PREFIX) and not (
         metrics.get("confirmed") is True
         and metrics.get("quality_review_required") is False
         and (number(metrics.get("duration_seconds")) or 0) >= 8

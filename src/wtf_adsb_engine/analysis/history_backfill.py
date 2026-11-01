@@ -30,7 +30,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import episode_replay, maneuvers, reference, rules, telemetry, typecheck, watchlists
+from . import episode_replay, kinds, maneuvers, reference, rules, telemetry, typecheck, watchlists
 from .episode_evidence import octal_code
 from .episode_replay import (
     BREAK_FLAGS,
@@ -69,7 +69,8 @@ RUNNER = "run_frozen.py"
 # names the season's first covered day as its baseline.
 CROSS_DAY_VERSION = "cross-day-v2"
 CROSS_DAY_ARTIFACT = "cross-day.json"
-CROSS_DAY_KINDS = ("first_type_here", "first_country_here", "seasonal_speed_record")
+# In the registry's order, which keeps the recorded one (the kinds golden test pins it).
+CROSS_DAY_KINDS = tuple(kinds.table("cross_day"))
 CROSS_DAY_SCOPE = {
     "version": CROSS_DAY_VERSION,
     "coverage": "Complete analysis days with at least one hour of recorded archive slices; earlier UTC days only.",
@@ -1378,7 +1379,7 @@ def _archive_wording(finding, source, aircraft):
         )
     if source == "heatmap" and finding.kind.startswith("special_squawk_"):
         finding = replace(finding, kind="archive_squawk_" + str(aircraft.get("squawk", "unknown")))
-    if finding.kind.startswith(("special_squawk_", "archive_squawk_")):
+    if finding.kind.startswith(rules.SQUAWK_PREFIXES):
         finding = replace(
             finding,
             explanation=finding.explanation
@@ -2424,7 +2425,7 @@ def assemble_episodes(destination):
                 active[row["hex"]] = group
             group["last_seen"] = max(group["last_seen"], row["last_seen"])
             event["selection"] = selection.assess(event, {})
-            if event["kind"].startswith(("special_squawk_", "archive_squawk_")):
+            if event["kind"].startswith(rules.SQUAWK_PREFIXES):
                 event["selection"].update(review_required=True, story_eligible=False)
                 event["selection"]["reasons"].append(
                     "Carried archive labels do not confirm repeated code messages"

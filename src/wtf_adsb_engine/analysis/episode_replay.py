@@ -6,7 +6,7 @@ import math
 import statistics
 from collections import defaultdict, deque
 
-from . import maneuvers
+from . import kinds, maneuvers
 from .rules import PATTERN_WINDOW_SECONDS, distance_nm, number
 from .selection import ENCOUNTER_GAP
 from .telemetry import DIRECT, LIMIT, WINDOW, advisory_sense, bounded_append, positions, recent
@@ -34,7 +34,7 @@ POSITION_GAP_SECONDS = 45
 # Rules over fields that readsb saves only with a trace row's detail object.
 DETAIL_FIELDS = ("nic", "nac_p", "gpsOkBefore", "nav_altitude_mcp")
 DETAIL_RULES = (maneuvers.gnss_integrity_loss, maneuvers.selected_altitude_overshoot)
-DETAIL_KINDS = ("gnss_integrity_loss", "selected_altitude_overshoot")
+DETAIL_KINDS = tuple(sorted(kinds.where(detail=True)))
 # Readings copied into a snapshot taken from a track fix rather than an episode sample.
 SNAPSHOT_READINGS = (
     "lat",
@@ -68,7 +68,7 @@ FORMATION_FLOOR_FT = 1500
 GNSS_MEMORY_SECONDS = 900
 # Results of successive evaluations up to this far apart describe one phenomenon.
 GROUP_MERGE_SECONDS = 120
-ORBIT_KINDS = ("circling", "prolonged_holding")
+ORBIT_KINDS = tuple(sorted(kinds.where(orbit=True)))
 # TCAS evidence uses the richest retained track around the advisory.
 TCAS_MARGIN_SECONDS = 120
 TCAS_SNAPSHOT_SECONDS = 30

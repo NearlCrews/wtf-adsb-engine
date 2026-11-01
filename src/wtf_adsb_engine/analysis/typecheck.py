@@ -5,9 +5,10 @@ a type envelope, a seasonal speed record, a first sighting of a type, or a
 rare or notable variant then rests on a wrong premise. This worker asks two public
 registries, adsbdb and hexdb, for the address's type and keeps a compact
 answer in the journal's ``type_checks`` table for 30 days. ``attach`` writes
-``evidence.type_check`` into each type-dependent event, and curation holds an
-event whose second source disagrees. No position, receiver, or private value
-is ever sent: the request carries only the 24-bit address.
+``evidence.type_check`` into each type-dependent event, and curation holds a
+type-dependent event whose second source disagrees, except a mismatch story,
+which names the registry's type instead. No position, receiver, or private
+value is ever sent: the request carries only the 24-bit address.
 
 The worker runs beside the collector and never blocks it: each pass reads
 first and writes in one short transaction at its end, and the request itself
@@ -19,12 +20,22 @@ import os
 import time
 
 from . import registry_http
+
+# The registry pages, the kinds that depend on the type, and a check's state live in
+# enrichment_rules, which the facts layer reads without loading this worker. The worker's
+# tests read REGISTRY_TYPE_KINDS and type_check_state here.
+from .enrichment_rules import (  # noqa: F401
+    ADSBDB,
+    HEXDB,
+    REGISTRY_TYPE_KINDS,
+    SETTLED,
+    TYPE_DEPENDENT_KINDS,
+    type_check_state,
+)
 from .reference import clean
 from .rules import ICAO_ADDRESS, IDENTIFIERS, identifier, number
 
 NAME = "typecheck"
-ADSBDB = "https://api.adsbdb.com/v0/aircraft/"
-HEXDB = "https://hexdb.io/api/v1/aircraft/"
 MAX_BYTES = 64 * 1024
 RETENTION = 30 * 86400
 # At most one lookup per second; the loop idles longer with nothing to check.
@@ -39,24 +50,6 @@ SCAN_OVERLAP = 3600
 # The most pending events one pass reads, and the most of one address it updates.
 PENDING_LIMIT = 500
 COLUMNS = ("hex", "source", "type_code", "registration", "fetched_at")
-# Kinds whose story premise depends on the listed type being right.
-TYPE_DEPENDENT_KINDS = frozenset(
-    {
-        "type_speed_mismatch",
-        "type_altitude_mismatch",
-        "seasonal_speed_record",
-        "first_type_here",
-        "notable_variant",
-        "vintage",
-        "watch_type",
-        "rare_here",
-        "above_rated_altitude",
-        "above_rated_speed",
-    }
-)
-# A compared check's states; "pending" (no attempt yet) and "failed" (the registries
-# could not be asked; retried after the backoff) are the others.
-SETTLED = frozenset({"unavailable", "agrees", "disagrees"})
 
 
 def enabled():
@@ -97,10 +90,9 @@ def _hexdb(payload):
     }
 
 
-# The registries in the order lookup() asks them: (name, base URL, response reader).
+# The registries in the order lookup() asks them: (name, base URL, response reader). Their
+# names are enrichment_rules.REGISTRIES.
 SOURCES = (("adsbdb", ADSBDB, _adsbdb), ("hexdb", HEXDB, _hexdb))
-# Their names, as evidence.type_check.source and the public packet record them.
-REGISTRIES = frozenset(name for name, _base, _parse in SOURCES)
 
 
 def lookup(address, *, opener=None, now=None):
@@ -211,27 +203,6 @@ def failure_evidence(now, status=None):
     }
 
 
-def type_check_state(evidence):
-    """pending, failed, unavailable, agrees or disagrees.
-
-    A check compared with a type the aircraft no longer lists is pending again,
-    so a listing changed after the lookup never keeps a stale verdict (the
-    worker checks it again), and so is a block in no known state.
-    """
-    evidence = evidence if isinstance(evidence, dict) else {}
-    check = evidence.get("type_check")
-    if not isinstance(check, dict) or not check:
-        return "pending"
-    state = check.get("state")
-    if state == "failed":
-        return "failed"
-    aircraft = evidence.get("aircraft") if isinstance(evidence.get("aircraft"), dict) else {}
-    listed = check.get("listed_type")
-    if isinstance(listed, str) and listed != clean(aircraft.get("t")):
-        return "pending"
-    return state if state in SETTLED else "pending"
-
-
 def _write(db, event, block):
     """Set evidence.type_check in memory and in the row.
 
@@ -294,9 +265,9 @@ def pending(db, since, address=None):
     lists, newest first."""
     from .app import LIVE_ORIGIN
 
-    kinds = ",".join("?" * len(TYPE_DEPENDENT_KINDS))
+    kind_slots = ",".join("?" * len(TYPE_DEPENDENT_KINDS))
     settled = ",".join("?" * len(SETTLED))
-    where = f"""origin=? AND last_seen>=? AND kind IN ({kinds}) AND hex NOT LIKE '~%'
+    where = f"""origin=? AND last_seen>=? AND kind IN ({kind_slots}) AND hex NOT LIKE '~%'
         AND json_valid(evidence) AND (json_type(evidence,'$.type_check') IS NULL
           OR COALESCE(json_extract(evidence,'$.type_check.state'),'') NOT IN ({settled})
           OR COALESCE(json_extract(evidence,'$.type_check.listed_type'),'')

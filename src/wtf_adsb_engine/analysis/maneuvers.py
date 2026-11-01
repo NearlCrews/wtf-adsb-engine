@@ -13,11 +13,12 @@ from functools import lru_cache
 from itertools import pairwise, product
 from typing import NamedTuple
 
-from . import airport_context
+from . import airport_context, kinds
+from .kinds import PRIORITY_STATUSES as PRIORITY_STATUSES
+from .kinds import STATUS_CODES as STATUS_CODES
+from .kinds import STATUS_MEANINGS as STATUS_MEANINGS
+from .kinds import STATUS_NAMES as STATUS_NAMES
 from .rules import (
-    STATUS_CODES,
-    STATUS_MEANINGS,
-    STATUS_NAMES,
     Finding,
     distance_nm,
     movement_patterns,
@@ -44,42 +45,22 @@ EXTREME_RATE_FPM = 12000
 RATE_CONFLICT_FPM = 1500
 # Transponder codes stay one episode across report gaps of up to a minute.
 STATUS_GAP = 60
-KINDS = {
-    "rapid_descent",
-    "rapid_climb",
-    "possible_go_around",
-    "descending_spiral",
-    "course_reversal",
-    "altitude_oscillation",
-    "prolonged_holding",
-    "hovering",
-    "parallel_passes",
-    "departure_return",
-    "correlated_data_anomaly",
-    "tcas_ra",
-    "special_use_code",
-    "stratospheric_balloon",
-    "formation_flight",
-    "holding_stack",
-    "gnss_integrity_loss",
-    "gnss_integrity_cluster",
-    "survey_grid",
-    "thermal_soaring",
-    "selected_altitude_overshoot",
-    "extreme_turn_rate",
-}
-# Journal categories; every other kind is a flight pattern.
-CATEGORIES = {
-    "rapid_descent": "performance",
-    "rapid_climb": "performance",
-    "selected_altitude_overshoot": "performance",
-    "correlated_data_anomaly": "oddities",
-    "gnss_integrity_loss": "oddities",
-    "gnss_integrity_cluster": "oddities",
-    "stratospheric_balloon": "airframes",
-    "tcas_ra": "signals",
-    "special_use_code": "signals",
-}
+KINDS = set(kinds.where(origin="episode"))
+# Journal categories, in their recorded order; every other kind is a flight pattern.
+CATEGORIES = kinds.table(
+    "journal_category",
+    order=(
+        "rapid_descent",
+        "rapid_climb",
+        "selected_altitude_overshoot",
+        "correlated_data_anomaly",
+        "gnss_integrity_loss",
+        "gnss_integrity_cluster",
+        "stratospheric_balloon",
+        "tcas_ra",
+        "special_use_code",
+    ),
+)
 PATTERN_KINDS = KINDS - set(CATEGORIES)
 METRICS = {
     "duration_seconds": ("Episode duration", "s"),
@@ -145,14 +126,10 @@ CONTEXT_TAGS = frozenset(
 # freshness cannot change, which carry it as context (owner decision, 2026-10-06).
 # An advisory is robust only when measured on its own aircraft's saved trace.
 ARCHIVE_FRESHNESS = "archive_field_freshness_unknown"
-FRESHNESS_ROBUST_KINDS = frozenset(
-    {"stratospheric_balloon", "formation_flight", "survey_grid", "holding_stack"}
-)
-# The transponder-status table (STATUS_CODES, STATUS_NAMES, STATUS_MEANINGS) is
-# defined once in rules and re-exported here.
+FRESHNESS_ROBUST_KINDS = kinds.where(freshness_robust=True)
+# The transponder-status table (STATUS_CODES, STATUS_NAMES, STATUS_MEANINGS) and the
+# priority statuses (PRIORITY_STATUSES) are defined once in kinds and re-exported here.
 EMERGENCY_VALUES = {"none", "reserved", *STATUS_NAMES}
-# Priority declarations are separate episodes, so they never hide a later emergency.
-PRIORITY_STATUSES = {"lifeguard", "minfuel"}
 # US special-purpose codes (FAA JO 7110.66); the meaning is jurisdiction-specific.
 SPECIAL_USE_CODES = {"1202", "1255", "1276", "1277", "4000", "7777"}
 SENSITIVE_CODES = re.compile(r"44[0-7][0-7]")

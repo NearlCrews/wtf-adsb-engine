@@ -41,7 +41,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def get_json(url, opener=None, *, max_bytes, absent=frozenset()):
+def get_json(url, opener=None, *, max_bytes, absent=frozenset(), timeout=TIMEOUT):
     """The JSON value a GET returns, or None for an empty body or an HTTP status in `absent`.
 
     Raises Unavailable for any other failure, a body over max_bytes, or one that
@@ -50,7 +50,7 @@ def get_json(url, opener=None, *, max_bytes, absent=frozenset()):
     request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, method="GET")
     opener = opener or build_opener(NoRedirect()).open
     try:
-        with opener(request, timeout=TIMEOUT) as response:
+        with opener(request, timeout=timeout) as response:
             raw = response.read(max_bytes + 1)
     except HTTPError as error:
         error.close()

@@ -324,7 +324,7 @@ WIND = _object(
                 "valid_at",
             )
         },
-        "source": _enum(stories.wind.SOURCE),
+        "source": _enum(*stories.WIND_SOURCES),
         "url": _url,
         "attribution": _text,
         "model": _token,

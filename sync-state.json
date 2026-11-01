@@ -1,9 +1,148 @@
 {
   "format": 1,
-  "live_commit": null,
-  "modules": {},
+  "live_commit": "24cbf84c1fdee9cb0b86796bf5927093b43ae064",
+  "modules": {
+    "curation": {
+      "dest": "src/wtf_adsb_engine/analysis/curation.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "95aa58fb55c9ad98c96675aae33424e91f39bfde",
+      "status": "written",
+      "dest_sha256": "884155ffd78edba98e4011dc3bacb30d3032844b0fcf3c610c41d208aaf5361d"
+    },
+    "episode_evidence": {
+      "dest": "src/wtf_adsb_engine/analysis/episode_evidence.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "written",
+      "dest_sha256": "ba5b5b5869b1159e6cb93ac7e9b82d760cbdb660a1000305fbfb4673ce5460f8"
+    },
+    "episode_replay": {
+      "dest": "src/wtf_adsb_engine/analysis/episode_replay.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "written",
+      "dest_sha256": "3c1c8465a4be6e4f781fd0108d912c09e5ef9217c13a6a34f523d6e1c53d4de9"
+    },
+    "maneuvers": {
+      "dest": "src/wtf_adsb_engine/analysis/maneuvers.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "written",
+      "dest_sha256": "d54f02ac75653e566718109c046f3c40d8db4fd42aaad07cff7a7a14117cecee"
+    },
+    "reference": {
+      "dest": "src/wtf_adsb_engine/analysis/reference.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "232373c7f16c132f982742bb5a472e29eebd02ee",
+      "status": "written",
+      "dest_sha256": "151cad4f6efdf8dc39780147cd888bcbe17f2645b323d66d0b2974fa2a579d0a"
+    },
+    "registry_http": {
+      "dest": "src/wtf_adsb_engine/analysis/registry_http.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "4703b7288e174326da86cacb562c543dbebc6cb6",
+      "status": "written",
+      "dest_sha256": "31c4815c1d0c44cab9351a9a759d4322d5ddf378547f38d7c20275481f8919c9"
+    },
+    "replay_patterns": {
+      "dest": "src/wtf_adsb_engine/analysis/replay_patterns.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "written",
+      "dest_sha256": "a437dd4a6d503d6115eee740981cedf14fbdc21b552dd4829fa9481ac48a5925"
+    },
+    "rules": {
+      "dest": "src/wtf_adsb_engine/analysis/rules.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "8b6c8958b2a55cf431e96251ea301a10ad69a43c",
+      "status": "written",
+      "dest_sha256": "eeaa43cccdf3c6fd647fa9ff6f30355f1a85d3c266353444b425c160a5ade62a"
+    },
+    "typecheck": {
+      "dest": "src/wtf_adsb_engine/analysis/typecheck.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "written",
+      "dest_sha256": "e4b6d2043a1ef97ac068c0eadf779f7685849cae4ad10d136a36edb5096cb5ed"
+    },
+    "watchlists": {
+      "dest": "src/wtf_adsb_engine/analysis/watchlists.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "ba6d32f2db33556143491d158353b6cf080c3c84",
+      "status": "written",
+      "dest_sha256": "ff5f02d25b331446c078a313713958bdd706f5f32b1d337db831e310fb06b328"
+    },
+    "wind": {
+      "dest": "src/wtf_adsb_engine/analysis/wind.py",
+      "mode": "merge",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "written",
+      "dest_sha256": "45efc87c1a3a2483e8b21519149bdbed53498b39aef3f0c646a1f2b4d33f6f29"
+    },
+    "app": {
+      "dest": "src/wtf_adsb_engine/analysis/app.py",
+      "mode": "hand",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "staged",
+      "dest_sha256": "3ee1b02a0cba74ea5dd351ecaf50bc8e403a510ba94391b254cbd883d15403e6"
+    },
+    "history_backfill": {
+      "dest": "src/wtf_adsb_engine/analysis/history_backfill.py",
+      "mode": "hand",
+      "base": "b56f4a4",
+      "synced": "8b6c8958b2a55cf431e96251ea301a10ad69a43c",
+      "status": "staged",
+      "dest_sha256": "1719cd44461d5497654e5395ead08e452df38ec337292e782b9fbd48a08152d9"
+    },
+    "selection": {
+      "dest": "src/wtf_adsb_engine/analysis/selection.py",
+      "mode": "hand",
+      "base": "b56f4a4",
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "staged",
+      "dest_sha256": "5582488067b4fe506df5d2d8880fce01e6dadb00d9ab860138f3ced89f6b4a2a"
+    },
+    "stories": {
+      "dest": "src/wtf_adsb_engine/analysis/stories.py",
+      "mode": "hand",
+      "base": "b56f4a4",
+      "synced": "8b6c8958b2a55cf431e96251ea301a10ad69a43c",
+      "status": "staged",
+      "dest_sha256": "da8d52e24588244131de4f78ae04c747a3461c7d46c0dc1c308f2fa84570b29d"
+    },
+    "kinds": {
+      "dest": "src/wtf_adsb_engine/analysis/kinds.py",
+      "mode": "copy",
+      "base": null,
+      "synced": "8b6c8958b2a55cf431e96251ea301a10ad69a43c",
+      "status": "written",
+      "dest_sha256": "0423a148f7de4528843944de7b5da1d6e2fd2178e23e5e811513126d775d5a71"
+    },
+    "enrichment_rules": {
+      "dest": "src/wtf_adsb_engine/analysis/enrichment_rules.py",
+      "mode": "copy",
+      "base": null,
+      "synced": "4f7dbc89b01c44058d4b6a7fdbc5fa008d95a87a",
+      "status": "written",
+      "dest_sha256": "3d9c0f0634c34b3fd5afd16beb3de4e0344723613ff52b33ad5ec56ddb8321d2"
+    }
+  },
   "shared_digests": {
     "src/wtf_adsb_engine/wire.py": "9580526666a32b5b4c780eca020849016cff930f9203ff4a5a513585e00904fb",
+    "src/wtf_adsb_engine/analysis/kinds.py": "0423a148f7de4528843944de7b5da1d6e2fd2178e23e5e811513126d775d5a71",
+    "src/wtf_adsb_engine/analysis/enrichment_rules.py": "3d9c0f0634c34b3fd5afd16beb3de4e0344723613ff52b33ad5ec56ddb8321d2",
     "src/wtf_adsb_engine/contracts/change-batch-v1.schema.json": "f12ff11d43f1f8ea41ee0232d2392d6e639a0f7eb22d412a9cd80eb4938450f8",
     "src/wtf_adsb_engine/contracts/manifest-v1.schema.json": "15a2447fad0f4156af3c31cbb5a8a1dd261b7f8828e8d765421782279e4d5e09",
     "src/wtf_adsb_engine/contracts/observation-v1.schema.json": "8ec5f7700b6060d0e7c7bea5356727584f00cceed910607f3b486367566c9344",

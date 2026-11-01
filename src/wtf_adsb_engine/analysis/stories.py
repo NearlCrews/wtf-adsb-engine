@@ -9,7 +9,7 @@ import re
 from copy import deepcopy
 from datetime import date, datetime, timezone
 
-from . import episode_evidence, limits, maneuvers, typecheck, watchlists, wind
+from . import enrichment_rules, episode_evidence, kinds, limits, maneuvers, watchlists
 from .rules import IDENTIFIERS, IDENTITY_CHECK_KEYS, RATED_KINDS, distance_nm, identifier, number
 
 ICAO_TYPES = "https://www.icao.int/operational-safety/doc-8643-aircraft-type-designators/search"
@@ -69,26 +69,10 @@ SOURCES = {
     "mode_ac",
     "unknown",
 }
-# Detector kinds from the shared contract; listed here so the public policy does
-# not depend on the detector branch defining them first.
-EPISODE_KINDS = maneuvers.KINDS | {
-    "tcas_ra",
-    "special_use_code",
-    "stratospheric_balloon",
-    "formation_flight",
-    "holding_stack",
-    "gnss_integrity_loss",
-    "gnss_integrity_cluster",
-    "survey_grid",
-    "thermal_soaring",
-    "selected_altitude_overshoot",
-    "extreme_turn_rate",
-}
-PATTERN_KINDS = (
-    {"circling", "repeated_passes", "loitering", "confined_activity"}
-    | maneuvers.PATTERN_KINDS
-    | {"formation_flight", "holding_stack", "survey_grid", "thermal_soaring", "extreme_turn_rate"}
-)
+# The detector's episode kinds (maneuvers.KINDS), and every movement-pattern kind: the
+# story-side shapes and the episode kinds outside a journal category.
+EPISODE_KINDS = set(kinds.where(origin="episode"))
+PATTERN_KINDS = set(kinds.where(pattern=True))
 READINGS = {
     "gs": ("Ground speed", "kn"),
     "tas": ("True airspeed", "kn"),
@@ -101,60 +85,36 @@ READINGS = {
     "nic": ("Navigation integrity category", "category"),
     "nac_p": ("Navigation accuracy category", "category"),
 }
-# Readings that matter only to some kinds; other cards would gain clutter.
-KIND_READINGS = {
-    "selected_altitude_overshoot": {
+# Readings that matter only to some kinds (a kind's `reading` names its group); other cards
+# would gain clutter.
+READING_GROUPS = {
+    "selected_altitude": {
         "nav_altitude_mcp": ("Selected altitude (autopilot setting)", "ft"),
         "nav_qnh": ("Altimeter setting", "hPa"),
     },
-    **dict.fromkeys(
-        ("gnss_integrity_loss", "gnss_integrity_cluster", "correlated_data_anomaly"),
-        {
-            "nic_baro": ("Barometric altitude integrity", "category"),
-            "sil": ("Source integrity level", "category"),
-            "gva": ("Geometric vertical accuracy", "category"),
-            "sda": ("System design assurance", "category"),
-            "version": ("ADS-B version", ""),
-        },
-    ),
+    "integrity": {
+        "nic_baro": ("Barometric altitude integrity", "category"),
+        "sil": ("Source integrity level", "category"),
+        "gva": ("Geometric vertical accuracy", "category"),
+        "sda": ("System design assurance", "category"),
+        "version": ("ADS-B version", ""),
+    },
 }
-KINDS = {
-    "circling",
-    "repeated_passes",
-    "loitering",
-    "confined_activity",
-    "fast",
-    "high",
-    "vertical",
-    "wind_boost",
-    "altitude_gap",
-    "outlier_gs",
-    "outlier_alt_baro",
-    "outlier_baro_rate",
-    "outlier_archive_alt",
-    "type_speed_mismatch",
-    "type_altitude_mismatch",
-    "seasonal_speed_record",
-    # A sustained reading beyond the type's certified limit (rules.RATED_KINDS).
-    "above_rated_altitude",
-    "above_rated_speed",
-    "position_jump",
-    "military",
-    "database_watch",
-    "watch_type",
-    "vintage",
-    "unusual_emitter",
-    "space_category",
-    "rare_here",
-    "watchlist_match",
-    "identity_conflict",
-    "first_type_here",
-    "first_country_here",
-    "notable_variant",
-    "emitter_type_mismatch",
+KIND_READINGS = {
+    name: READING_GROUPS[group]
+    for name, group in kinds.table(
+        "reading",
+        order=(
+            "selected_altitude_overshoot",
+            "gnss_integrity_loss",
+            "gnss_integrity_cluster",
+            "correlated_data_anomaly",
+        ),
+    ).items()
 }
-SPECIAL_KINDS = {"special_squawk_" + status for status in maneuvers.STATUS_CODES | maneuvers.STATUS_NAMES}
-SPECIAL_KINDS |= {"archive_squawk_" + code for code in maneuvers.STATUS_CODES}
+KINDS = set(kinds.where(origin="story"))
+# The transponder-status families: live codes and statuses, archived codes.
+SPECIAL_KINDS = set(kinds.where(origin="special"))
 STORY_KINDS = KINDS | SPECIAL_KINDS | EPISODE_KINDS
 EMERGENCY_STATUSES = maneuvers.STATUS_NAMES | {"none", "reserved"}
 DATABASE_FLAGS = {"military": 1, "interesting": 2, "pia": 4, "ladd": 8}
@@ -194,16 +154,16 @@ LABEL_CAVEAT = (
     "Archived callsign and transponder-code labels are carried between saved positions; they are not "
     "readings at the position time."
 )
-FIRST_SIGHTING_KINDS = {"first_type_here", "first_country_here"}
+FIRST_SIGHTING_KINDS = set(kinds.where(first_sighting=True))
 FIRST_SIGHTING_SCOPES = {"type", "allocation_country"}
 # A rated finding's comparison (rules._rated_altitude, rules._rated_speed, and wind.py):
 # the field each kind compares and the certified limits a block may name.
-RATED_FIELDS = {"above_rated_altitude": "alt_baro", "above_rated_speed": "airspeed"}
+RATED_FIELDS = kinds.table("rated_field")
 RATED_LIMIT_NAMES = frozenset(limits.LIMITS)
 RATED_VERDICTS = {"exceeded", "within", "implausible", "pending", "unknown"}
 # The wind sources wind.py names, and the registries typecheck.py asks.
-WIND_SOURCES = {wind.SOURCE}
-TYPE_CHECK_SOURCES = typecheck.REGISTRIES
+WIND_SOURCES = {enrichment_rules.WIND_SOURCE}
+TYPE_CHECK_SOURCES = enrichment_rules.REGISTRIES
 # A cited limit's sheet is a public HTTPS page; public_events checks the host again.
 HTTPS_URL = re.compile(r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[^\s<>\"'\\]*)?")
 
@@ -738,23 +698,30 @@ def rated_limit(evidence, kind):
     return block
 
 
-def type_check(evidence):
+def type_check(evidence, kind=None):
     """The second-source type check, reduced to what the story needs: its state and the
     registry that answered.
 
-    The registry's type code agrees with the listed type whenever a story is
-    told, and its registration and the listed type stay private: the identity
-    already shows the database's, and a registry's own spelling may differ.
+    A rated story is told only when the registry's type agrees with the listed
+    type. The registry's type code is public for a mismatch story when it
+    differs (enrichment_rules.REGISTRY_TYPE_KINDS). Its registration and the listed
+    type stay private: the identity already shows the database's, and a
+    registry's own spelling may differ.
     """
     raw = evidence.get("type_check")
     if not isinstance(raw, dict):
         return None
     source = raw.get("source")
-    return {
+    found = {
         # A check made against a type the aircraft no longer lists is pending.
-        "state": typecheck.type_check_state(evidence),
+        "state": enrichment_rules.type_check_state(evidence),
         "source": source if source in TYPE_CHECK_SOURCES else None,
     }
+    if kind in enrichment_rules.REGISTRY_TYPE_KINDS and found["state"] == "disagrees":
+        code = identifier(raw.get("type_code"), IDENTIFIERS["type_code"])
+        if code:
+            found["type_code"] = code
+    return found
 
 
 def participants(evidence, primary=None):
@@ -886,12 +853,14 @@ def evidence_packet(event, include_track=True, *, observation_interval=None):
     if kind == "seasonal_speed_record" and (block := season_record(evidence.get("season_record"))):
         packet["season_record"] = block
     # A rated finding's comparison and its second-source type check. Unlike the blocks
-    # above they project to public measurements, so they join the evidence version.
-    if kind in RATED_KINDS:
-        if block := rated_limit(evidence, kind):
-            packet["rated_limit"] = block
-        if check := type_check(evidence):
-            packet["type_check"] = check
+    # above they project to public measurements, so they join the evidence version. A
+    # mismatch story's check feeds the story facts only and stays outside the version.
+    if kind in RATED_KINDS and (block := rated_limit(evidence, kind)):
+        packet["rated_limit"] = block
+    if (kind in RATED_KINDS or kind in enrichment_rules.REGISTRY_TYPE_KINDS) and (
+        check := type_check(evidence, kind)
+    ):
+        packet["type_check"] = check
     if checks := identity_checks(evidence.get("identity_checks")):
         packet["identity_checks"] = checks
     if others := participants(evidence, identity["icao_address"]):

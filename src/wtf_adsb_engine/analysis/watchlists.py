@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from . import rules
 
@@ -155,6 +154,25 @@ CATEGORY_NOTES = {
 }
 # Associations that name nobody; such an entry is carried by its category and tags.
 VAGUE_ASSOCIATIONS = frozenset({"private", "private owner", "privately owned", "unknown", "n/a", "none"})
+# The list's own category for privacy-program aircraft.
+PRIVACY_CATEGORY = "PIA"
+
+
+def describable(association, list_category, category):
+    """Whether what an entry's link leads to may be described: an entry that names nobody, or
+    one the list files for the privacy program (its category or the neutral label it reads as),
+    is never looked up or described."""
+    return (
+        isinstance(association, str)
+        and association.strip().lower() not in VAGUE_ASSOCIATIONS
+        and list_category != PRIVACY_CATEGORY
+        and not (
+            isinstance(category, str)
+            and category.strip().lower() == NEUTRAL_CATEGORIES[PRIVACY_CATEGORY].lower()
+        )
+    )
+
+
 # The source's group column, as a story says it.
 GROUPS = {"Mil": "military", "Gov": "government", "Civ": "civil"}
 
@@ -178,26 +196,6 @@ def source_commit(url, asset="plane-alert-db.csv"):
     ):
         raise WatchlistError("Use the allowlisted raw GitHub asset at an explicit 40-character commit")
     return parsed.path.split("/")[3]
-
-
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise WatchlistError("Pinned watchlist downloads must not redirect")
-
-
-def fetch_pinned(url, maximum=MAX_SOURCE_BYTES, asset="plane-alert-db.csv"):
-    source_commit(url, asset)
-    if not 1 <= maximum <= MAX_SOURCE_BYTES:
-        raise WatchlistError("Download limit must be within the fixed 8 MiB bound")
-    request = Request(url, headers={"User-Agent": "wtf-adsb-watchlist-import/1", "Accept": "text/plain"})
-    with build_opener(_NoRedirect()).open(request, timeout=30) as response:
-        length = response.headers.get("Content-Length")
-        if length and int(length) > maximum:
-            raise WatchlistError("Pinned source exceeds the download limit")
-        data = response.read(maximum + 1)
-    if len(data) > maximum:
-        raise WatchlistError("Pinned source exceeds the download limit")
-    return data
 
 
 def normalized_registration(value):

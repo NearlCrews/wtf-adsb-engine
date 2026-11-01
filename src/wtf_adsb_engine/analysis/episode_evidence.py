@@ -3,7 +3,7 @@
 import re
 from datetime import datetime, timezone
 
-from . import maneuvers, telemetry
+from . import kinds, maneuvers, telemetry
 from .rules import number
 
 # Shared metric contract. The detector's own table wins once it defines a key.
@@ -142,15 +142,7 @@ CONTEXT_NOTES = {
     "aerotow_like": "A glider and another aircraft climbed together within 0.2 NM, as in an aerotow; the data cannot confirm a tow.",
 }
 # Kinds whose headline speed or position MLAT would estimate rather than receive.
-MLAT_ESTIMATE_KINDS = {
-    "fast",
-    "wind_boost",
-    "outlier_gs",
-    "type_speed_mismatch",
-    "seasonal_speed_record",
-    "above_rated_speed",
-    "position_jump",
-}
+MLAT_ESTIMATE_KINDS = set(kinds.where(mlat_estimate=True))
 STATE_MEANINGS = {
     "active": "The condition was still present in the last retained report; this does not mean it continues now.",
     "recovered": "Later reports returned below the detection threshold.",

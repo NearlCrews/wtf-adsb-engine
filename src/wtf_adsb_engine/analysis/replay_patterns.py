@@ -282,8 +282,8 @@ def _evaluations(address, input_points, metadata, detector, episodes, max_episod
         findings = detector(list(window)) if len(window) >= 10 else []
         # Taken before the episode bookkeeping below annotates the findings.
         verdict = _verdict(findings) if verdicts and findings else False
-        kinds = {finding.kind for finding in findings}
-        pending = {kind: value for kind, value in pending.items() if kind in kinds}
+        found = {finding.kind for finding in findings}
+        pending = {kind: value for kind, value in pending.items() if kind in found}
         for finding in findings:
             pattern = (finding.evidence or {}).get("pattern", {})
             endpoint = number(pattern.get("ended_at"))

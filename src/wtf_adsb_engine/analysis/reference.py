@@ -473,6 +473,13 @@ def allocation(address):
     return {"country": code.upper(), "name": tables["countries"].get(code)} if code else None
 
 
+@_fail_soft(frozenset)
+def country_names():
+    """The names of the States the allocation table lists ("Germany", "United States")."""
+    tables = _identity()
+    return frozenset(tables["countries"].values()) if tables else frozenset()
+
+
 @_fail_soft()
 def military_allocation(address):
     """True when an address lies in a range used for military aircraft; None when unavailable."""

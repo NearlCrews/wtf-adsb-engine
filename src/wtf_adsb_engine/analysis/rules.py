@@ -12,7 +12,16 @@ from typing import NamedTuple
 
 # Pinned reference data. Its lookups fail soft, so a missing or altered data
 # file only switches the checks that need it off.
-from . import limits, reference
+from . import kinds, limits, reference
+
+# The transponder-status table and the transponder-code kind prefixes live in kinds;
+# they are re-exported here, and other modules import them from here or from maneuvers.
+from .kinds import ARCHIVE_SQUAWK_PREFIX as ARCHIVE_SQUAWK_PREFIX
+from .kinds import LIVE_SQUAWK_PREFIX as LIVE_SQUAWK_PREFIX
+from .kinds import SQUAWK_PREFIXES as SQUAWK_PREFIXES
+from .kinds import STATUS_CODES as STATUS_CODES
+from .kinds import STATUS_MEANINGS as STATUS_MEANINGS
+from .kinds import STATUS_NAMES as STATUS_NAMES
 
 # The one number parser and finite-number check; limits.py sits below this
 # module and shares them, and other modules import both from here.
@@ -81,12 +90,9 @@ EMITTERS = {
 }
 # A type with more addresses than this in the 30-day baseline is never locally rare.
 RARE_TYPE_ADDRESSES = 3
-# The one transponder-status table. maneuvers re-exports it, and other modules
-# import it from there; a code and the aircraft's own emergency field describe
-# one status.
-STATUS_MEANINGS = {"7400": "lost_link", "7500": "unlawful", "7600": "nordo", "7700": "general"}
-STATUS_CODES = frozenset(STATUS_MEANINGS)
-STATUS_NAMES = frozenset({"general", "lifeguard", "minfuel", "nordo", "unlawful", "downed"})
+# Ground-speed stories that give the type's usual speed in these records (selection.type_norm,
+# story_facts._norm). Here rather than in story_facts, which curation cannot import.
+NORM_KINDS = kinds.where(norm=True)
 # Wording for the per-report status findings. The live and episode-archive paths
 # take statuses from maneuvers and drop these per-report findings.
 SQUAWKS = {
@@ -151,44 +157,34 @@ IDENTITY_CHECK_KEYS = (
     "conflict",
 )
 # Claims about which aircraft this is need a corroborated, non-conflicting identity.
-IDENTITY_LED_KINDS = frozenset(
-    {
-        "military",
-        "watch_type",
-        "vintage",
-        "rare_here",
-        "notable_variant",
-        "first_type_here",
-        "first_country_here",
-        "seasonal_speed_record",
-        "above_rated_altitude",
-        "above_rated_speed",
-    }
-)
+IDENTITY_LED_KINDS = kinds.where(identity_led=True)
 # Findings that compare a sustained reading with a type's certified limits.
-RATED_KINDS = frozenset({"above_rated_altitude", "above_rated_speed"})
+RATED_KINDS = frozenset(kinds.table("rated"))
 # Once the wind worker finds an encounter's rated-speed window implausible, its ground
 # speeds are bad data: these findings of the encounter take the blocking flag below
 # (wind.flag_ground_speed). A single report 1.5 times over its limit never becomes
 # "fast" in the first place (_performance_candidates).
 RATED_SPEED_IMPLAUSIBLE = "rated_speed_implausible"
-GROUND_SPEED_KINDS = frozenset({"fast", "seasonal_speed_record"})
+GROUND_SPEED_KINDS = kinds.where(ground_speed_reading=True)
 # No one-report stories: a spike, envelope, or rated-limit finding needs this many
 # coherent reports over this long. The collector confirms envelope and rated
 # readings over them (app), curation publishes no finding with fewer, and a
 # rated speed needs this many consecutive corrected reports over its limit (wind).
 MIN_REPORTS = limits.SUSTAINED_REPORTS
 MIN_REPORT_SECONDS = limits.SUSTAINED_SECONDS
-# The report field each numeric finding measures.
-MEASURED_FIELDS = {
-    "fast": "gs",
-    "type_speed_mismatch": "gs",
-    "outlier_gs": "gs",
-    "wind_boost": "gs",
-    "above_rated_speed": "gs",
-    "vertical": "baro_rate",
-    "outlier_baro_rate": "baro_rate",
-}
+# The report field each numeric finding measures, in its recorded order.
+MEASURED_FIELDS = kinds.table(
+    "measured_field",
+    order=(
+        "fast",
+        "type_speed_mismatch",
+        "outlier_gs",
+        "wind_boost",
+        "above_rated_speed",
+        "vertical",
+        "outlier_baro_rate",
+    ),
+)
 AIRLINE_CALLSIGN = re.compile(r"[A-Z]{3}[0-9]{1,4}[A-Z]{0,2}")
 MILITARY_SERIAL = re.compile(r"[0-9]{2}-[0-9]{3,5}|[0-9]{2}\+[0-9]{2}|[0-9]{3,6}|Z[A-Z][0-9]{3}")
 ICAO_ADDRESS = re.compile(r"[0-9a-f]{6}")
