@@ -19,7 +19,9 @@ from threading import Lock
 
 from jsonschema import Draft202012Validator, ValidationError
 
-VERSION = "1.0.0"
+# The contract version this copy writes, and the versions it reads (1.1.0 adds context.type_norms).
+VERSION = "1.1.0"
+SUPPORTED = frozenset({"1.0.0", "1.1.0"})
 PROFILE = "wtf-adsb.collection.v1"
 NAMESPACE = r"[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+"
 SEMVER = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
@@ -205,6 +207,9 @@ def validate_observation(value):
             raise ValueError("Finding lacks typed evidence")
     if not isinstance(value["context"], dict) or not isinstance(value["media"], dict):
         raise ValueError("Invalid observation context")
+    norms = value["context"].get("type_norms", {})
+    if not isinstance(norms, dict) or not set(norms) <= seen:
+        raise ValueError("A type norm names no finding of its group")
     extensions = value.get("extensions", [])
     if not isinstance(extensions, list) or len(extensions) > 64:
         raise ValueError("Invalid extension envelopes")
@@ -229,7 +234,20 @@ def validate_observation(value):
     return value
 
 
+def _contract(record, schema, error):
+    """Refuse another contract or an unsupported version by name, before the structural check."""
+    version = record.get("schema_version") if isinstance(record, dict) else None
+    if (
+        not isinstance(version, str)
+        or version not in SUPPORTED
+        or record.get("schema") != schema
+        or record.get("profile") != PROFILE
+    ):
+        raise ValueError(error)
+
+
 def validate_batch(batch, *, allow_synthetic=False):
+    _contract(batch, "wtf-adsb.observations", "Unsupported observation contract")
     _structure("change-batch-v1.schema.json", batch)
     keys(
         batch,
@@ -248,12 +266,6 @@ def validate_batch(batch, *, allow_synthetic=False):
         ),
         ("extension_schemas",),
     )
-    if (
-        batch["schema"] != "wtf-adsb.observations"
-        or batch["schema_version"] != VERSION
-        or batch["profile"] != PROFILE
-    ):
-        raise ValueError("Unsupported observation contract")
     identifier(batch["stream_id"])
     identifier(batch["generation"])
     instant(batch["generated_at"])
@@ -309,6 +321,8 @@ def validate_batch(batch, *, allow_synthetic=False):
             }:
                 raise ValueError("Invalid upsert")
             validate_observation(change["observation"])
+            if batch["schema_version"] == "1.0.0" and "type_norms" in change["observation"]["context"]:
+                raise ValueError("Unsupported observation contract")
             if digest(change["observation"]) != change["evidence_digest"]:
                 raise ValueError("Evidence digest mismatch")
             for extension in change["observation"].get("extensions", []):
@@ -357,6 +371,7 @@ def validate_health(health):
 
 
 def validate_manifest(manifest):
+    _contract(manifest, "wtf-adsb.manifest", "Unsupported export manifest")
     _structure("manifest-v1.schema.json", manifest)
     keys(
         manifest,
@@ -373,12 +388,6 @@ def validate_manifest(manifest):
             "batches",
         ),
     )
-    if (
-        manifest["schema"] != "wtf-adsb.manifest"
-        or manifest["schema_version"] != VERSION
-        or manifest["profile"] != PROFILE
-    ):
-        raise ValueError("Unsupported export manifest")
     identifier(manifest["stream_id"])
     identifier(manifest["generation"])
     instant(manifest["updated_at"])

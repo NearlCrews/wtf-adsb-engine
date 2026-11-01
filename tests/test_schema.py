@@ -261,5 +261,71 @@ class ContractSchemaTests(unittest.TestCase):
                     wire.validate_manifest(broken)
 
 
+def previous_version(batch):
+    """The example as a 1.0.0 batch: no type_norms, and the digest of what remains."""
+    batch = copy.deepcopy(batch)
+    batch["schema_version"] = "1.0.0"
+    change = batch["changes"][0]
+    del change["observation"]["context"]["type_norms"]
+    change["evidence_digest"] = wire.digest(change["observation"])
+    return batch
+
+
+class ContractVersionTests(unittest.TestCase):
+    """Contract 1.1.0 adds context.type_norms; readers keep accepting 1.0.0."""
+
+    def test_this_release_writes_1_1_0_and_reads_both_versions(self):
+        self.assertEqual(wire.VERSION, "1.1.0")
+        self.assertEqual(wire.SUPPORTED, {"1.0.0", "1.1.0"})
+        batch = example()
+        self.assertEqual(batch["schema_version"], wire.VERSION)
+        self.assertTrue(batch["changes"][0]["observation"]["context"]["type_norms"])
+        wire.validate_batch(batch, allow_synthetic=True)
+        wire.validate_batch(previous_version(batch), allow_synthetic=True)
+        for version in sorted(wire.SUPPORTED):
+            with self.subTest(version=version):
+                wire.validate_manifest({**manifest(), "schema_version": version})
+        validator = Draft202012Validator(json.loads((ROOT / "contracts" / NAMES[1]).read_text()))
+        validator.validate(previous_version(batch))
+
+    def test_an_unknown_version_is_refused_by_name(self):
+        for version in ("1.2.0", "2.0.0", "0.9.0", "", None, ["1.1.0"]):
+            with self.subTest(version=version):
+                batch = {**example(), "schema_version": version}
+                with self.assertRaisesRegex(ValueError, "^Unsupported observation contract$"):
+                    wire.validate_batch(batch, allow_synthetic=True)
+                with self.assertRaisesRegex(ValueError, "^Unsupported export manifest$"):
+                    wire.validate_manifest({**manifest(), "schema_version": version})
+
+    def test_a_1_0_0_batch_cannot_carry_type_norms(self):
+        batch = example()
+        batch["schema_version"] = "1.0.0"
+        with self.assertRaisesRegex(ValueError, "^Unsupported observation contract$"):
+            wire.validate_batch(batch, allow_synthetic=True)
+
+    def test_type_norms_are_typed_and_name_findings_of_the_group(self):
+        observation = example()["changes"][0]["observation"]
+        finding = observation["group"]["events"][0]["id"]
+        norm = observation["context"]["type_norms"][finding]
+        for norms in ({finding: None}, {finding: norm}, {}):
+            with self.subTest(norms=norms):
+                wire.validate_observation(
+                    {**observation, "context": {**observation["context"], "type_norms": norms}}
+                )
+        for norms in (
+            {finding: {**norm, "extra": 1}},
+            {finding: {key: value for key, value in norm.items() if key != "window_days"}},
+            {finding: {**norm, "low": 412.5}},
+            {finding: {**norm, "phase": "cruise"}},
+            {"not-a-uuid": None},
+            {"00000000-0000-4000-8000-0000000000ff": None},
+            [],
+        ):
+            with self.subTest(norms=norms), self.assertRaises(ValueError):
+                wire.validate_observation(
+                    {**observation, "context": {**observation["context"], "type_norms": norms}}
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

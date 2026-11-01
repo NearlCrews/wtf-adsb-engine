@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid5
 
-from . import airport_context, episode_evidence, rules, selection, stories, telemetry
+from . import airport_context, curation, episode_evidence, rules, selection, stories, telemetry
 from .identity import IdentityStore
 from .journal_health import watermark as journal_watermark
 from .numeric import number
@@ -668,6 +668,45 @@ def media_parts(source):
     return airport_context.parts(window, describe=_point_media)
 
 
+def _norm_inputs(aircraft, address):
+    """(type code, (phase, band), address) a type norm reads, as the legacy autopilot passes them."""
+    aircraft = aircraft if isinstance(aircraft, dict) else {}
+    return aircraft.get("t"), rules.performance_context(aircraft), address
+
+
+class _TypeNorms:
+    """Per-finding type speed norms (selection.type_norm) for curation.NORM_KINDS findings.
+
+    The sample rows are read once per export, as autopilot.collect reads them, and the
+    contexts only when a norm-kind finding needs them. With an identity sidecar, a quiet
+    group's finding keeps the norm sent last pass (IdentityStore.type_norm).
+    """
+
+    def __init__(self, connection, rows, identities, now):
+        self.connection, self.rows, self.identities = connection, rows, identities
+        self.quiet_before = now - selection.QUIET_SECONDS
+        self.contexts = None
+
+    def compute(self, typecode, phase_band, address):
+        if self.contexts is None:
+            self.contexts = selection.norm_contexts(self.connection, self.rows)
+        return selection.type_norm(self.contexts, typecode, phase_band, address)
+
+    def __call__(self, finding_id, aircraft, address, last_seen):
+        inputs = _norm_inputs(aircraft, address)
+        if self.identities is None:
+            return self.compute(*inputs)
+        return self.identities.type_norm(
+            finding_id, inputs, last_seen <= self.quiet_before, lambda: self.compute(*inputs)
+        )
+
+
+def _with_norms(context, norms):
+    """The day context, plus type_norms when the group has a norm-kind finding; the shared
+    day context itself is never changed."""
+    return {**context, "type_norms": norms} if norms else context
+
+
 def snapshot(database, now, *, source_instance="receiver", identity_path=None):
     """Current observation projection; use snapshot_state for the durable feed."""
     return snapshot_state(database, now, source_instance=source_instance, identity_path=identity_path)[
@@ -696,9 +735,17 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
         connection.execute("BEGIN")
         if health_mode is not None:
             journal_watermark(connection, health_mode)
+        # The sample rows feed the spotting thresholds and the type norms; they are read once.
+        rows = selection.sample_rows(connection)
         groups = selection.encounters(
-            connection, now, ignore_reviews=False, identity_cooldown=False, include_absorbed=True
+            connection,
+            now,
+            selection.performance_profiles(connection, rows),
+            ignore_reviews=False,
+            identity_cooldown=False,
+            include_absorbed=True,
         )
+        type_norms = _TypeNorms(connection, rows, identities, now)
         novelty = selection.novelty(connection)
 
         @lru_cache(maxsize=None)
@@ -718,7 +765,7 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
 
         results, keys = [], set()
         for group in groups:
-            events = []
+            events, norms = [], {}
             for compact in group["events"]:
                 if compact["kind"] not in FINDING_KINDS:
                     continue
@@ -736,6 +783,10 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
                 )
                 if projected is not None:
                     events.append(projected)
+                    if projected["kind"] in curation.NORM_KINDS:
+                        norms[projected["id"]] = type_norms(
+                            projected["id"], full["evidence"].get("aircraft"), full["hex"], group["last_seen"]
+                        )
             if not events:
                 continue
             start = group.get("start") if group.get("start") is not None else group["first_seen"]
@@ -763,7 +814,7 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
                                 group.get("registration"), rules.IDENTIFIERS["registration"]
                             ),
                         },
-                        "context": day_context(day),
+                        "context": _with_norms(day_context(day), norms),
                         "media": {
                             "by_finding": {event["id"]: {"parts": media_parts(event)} for event in events}
                         },
@@ -783,13 +834,25 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
                 row["observation"]["group"]["id"] = identifier
             restored = identities.replacement_rows(results)
             for row in restored:
+                observation = row["observation"]
                 day = (
-                    datetime.fromtimestamp(row["observation"]["group"]["first_seen"], timezone.utc)
+                    datetime.fromtimestamp(observation["group"]["first_seen"], timezone.utc)
                     .date()
                     .isoformat()
                 )
-                row["observation"]["context"] = day_context(day)
+                # The source rows are gone: a finding keeps the norm its saved payload carries,
+                # and a payload saved before type norms existed takes one from its evidence.
+                saved = observation["context"].get("type_norms") or {}
+                norms = {
+                    event["id"]: saved[event["id"]]
+                    if event["id"] in saved
+                    else type_norms.compute(*_norm_inputs(event["evidence"].get("aircraft"), event["hex"]))
+                    for event in observation["group"]["events"]
+                    if event["kind"] in curation.NORM_KINDS
+                }
+                observation["context"] = _with_norms(day_context(day), norms)
             results.extend(restored)
             identities.remember_replacements(results)
+            identities.retain_type_norms()
             retractions = identities.retractions()
         return {"observations": results, "retractions": retractions}

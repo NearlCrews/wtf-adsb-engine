@@ -1,7 +1,7 @@
 # Evidence format
 
 Version 0.1.0 implements the `wtf-adsb.collection.v1` profile with contract version
-`1.0.0`. The authoritative structural contracts are the bundled
+`1.1.0`, and reads `1.0.0` batches and manifests as well. The authoritative structural contracts are the bundled
 [Draft 2020-12 JSON Schemas](../contracts/README.md); the wire validator adds
 semantic checks. The [example batch](../examples/change-batch.example.json) uses
 synthetic evidence and a valid digest.
@@ -46,7 +46,7 @@ envelope; they cannot silently filter a numbered stream.
 
 | Field | Implemented meaning |
 | --- | --- |
-| `schema`, `schema_version`, `profile` | `wtf-adsb.observations`, `1.0.0`, `wtf-adsb.collection.v1` |
+| `schema`, `schema_version`, `profile` | `wtf-adsb.observations`, `1.1.0` (or `1.0.0` from an earlier producer), `wtf-adsb.collection.v1` |
 | `stream_id`, `generation` | Persistent opaque UUIDs identifying the stream and its continuity |
 | `generated_at` | Stable UTC timestamp assigned with the batch, taken from its last change |
 | `producer` | Bounded software name and version tokens recorded with the changes |
@@ -67,7 +67,7 @@ The collection observation has these fields:
 | Field | Content |
 | --- | --- |
 | `group` | Stable group UUID, observation interval and an array of projected findings |
-| `context` | Bounded novelty counts and the named compatibility policy profile |
+| `context` | Bounded novelty counts, the named compatibility policy profile and, since 1.1.0, per-finding type norms |
 | `media` | Aircraft track parts keyed by finding UUID, with timestamped positions and available altitude/speed references |
 | `extensions` | Optional namespaced, versioned payloads approved by local schema configuration |
 
@@ -77,6 +77,20 @@ schemas define the accepted shape; the reviewed projection in `analysis/export.p
 selects the evidence fields and removes receiver data. Known quality flags and
 unknown blocking conditions remain holds. A schema pass alone does not establish
 that a measurement is true or authorize publication.
+
+`context.type_norms` (contract 1.1.0) carries, for each seasonal speed record and
+type speed mismatch in the group, the type's usual ground speed in these records:
+the tenth and ninetieth percentiles of per-address encounter medians in the
+finding's flight phase and 10,000 ft altitude band, over the 30 days of direct
+samples before the newest, excluding the finding's own address. It needs 20 other
+addresses over 14 days; otherwise the entry is null. The object is keyed by
+finding ID and is absent when the group has no such finding, so other
+observations are unchanged from 1.0.0. A norm is a population figure from one
+collection, never a limit or a claim about one aircraft. Once a group is quiet
+(30 minutes without reports) its findings keep the norm they were last exported
+with, so the moving sample window does not issue a new revision on every pass;
+the identity sidecar remembers that value, and a replacement restored after
+source retention keeps the norms of its saved evidence.
 
 This is a compatibility profile for the extracted analysis. Its named policy
 context preserves the existing grouping and validation semantics without making

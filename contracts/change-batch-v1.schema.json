@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:wtf-adsb:contracts:change-batch-v1:1.0.0",
+  "$id": "urn:wtf-adsb:contracts:change-batch-v1:1.1.0",
   "title": "WTF ADS-B observation change batch v1",
   "description": "Structural contract. Consumers must also enforce semantic wire validation, privacy projection, size limits, checksums, and stream continuity.",
   "$ref": "#/$defs/batch",
@@ -12,7 +12,10 @@
           "const": "wtf-adsb.observations"
         },
         "schema_version": {
-          "const": "1.0.0"
+          "enum": [
+            "1.0.0",
+            "1.1.0"
+          ]
         },
         "profile": {
           "const": "wtf-adsb.collection.v1"
@@ -119,6 +122,23 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 160
+        },
+        "type_norms": {
+          "type": "object",
+          "description": "Contract 1.1.0: the type norm of each norm-kind finding in the group, keyed by finding id, or null when the records hold too few addresses or days.",
+          "propertyNames": {
+            "$ref": "#/$defs/uuid"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/typeNorm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
         }
       },
       "required": [],
@@ -617,6 +637,58 @@
       "type": "string",
       "format": "date-time",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+    },
+    "typeNorm": {
+      "type": "object",
+      "description": "A type's usual ground speed in these records for one phase and altitude band (tenth to ninetieth percentile of per-address encounter medians); a population figure, never a limit or a claim about one aircraft.",
+      "properties": {
+        "low": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "high": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "phase": {
+          "enum": [
+            "climb",
+            "descent",
+            "level"
+          ]
+        },
+        "band_floor_ft": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "band_ceiling_ft": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "addresses": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "window_days": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "low",
+        "high",
+        "phase",
+        "band_floor_ft",
+        "band_ceiling_ft",
+        "addresses",
+        "days",
+        "window_days"
+      ],
+      "additionalProperties": false
     },
     "upsert": {
       "type": "object",

@@ -4,6 +4,8 @@ Legacy row numbers stay inside this sidecar. Public finding/group identities are
 random UUIDs. Membership and saved encounter aliases preserve identities when a
 correction changes an interval. Witnessed membership merges and splits issue
 explicit durable supersessions; simple interval corrections keep their IDs.
+The sidecar also keeps each norm-kind finding's last exported type norm, which a
+quiet group reuses (export.py).
 """
 
 import json
@@ -17,6 +19,10 @@ from .numeric import number
 
 class IdentityReconciliationRequired(ValueError):
     pass
+
+
+def _canonical(value):
+    return json.dumps(value, separators=(",", ":"), allow_nan=False, sort_keys=True)
 
 
 class IdentityStore:
@@ -44,6 +50,9 @@ class IdentityStore:
                 CREATE TABLE IF NOT EXISTS replacement_payloads(
                     source TEXT NOT NULL,group_id TEXT NOT NULL,observation TEXT NOT NULL,
                     PRIMARY KEY(source,group_id));
+                CREATE TABLE IF NOT EXISTS type_norms(
+                    source TEXT NOT NULL,finding_id TEXT NOT NULL,inputs TEXT NOT NULL,
+                    norm TEXT NOT NULL,PRIMARY KEY(source,finding_id));
             """)
             self.db.commit()
             self.path.chmod(0o600)
@@ -51,6 +60,7 @@ class IdentityStore:
             self.db.close()
             raise
         self.rows = set()
+        self.norm_findings = set()
 
     def __enter__(self):
         try:
@@ -128,6 +138,34 @@ class IdentityStore:
             )
         self.rows.add(local_id)
         return identity
+
+    def type_norm(self, finding_id, inputs, quiet, compute):
+        """A finding's type norm: the one saved last pass when its group is quiet and the
+        norm reads the same type, phase, band, and address; otherwise compute(), saved for
+        the next pass. A drifting sample window then changes no quiet group's revision."""
+        key = _canonical(inputs)
+        row = self.db.execute(
+            "SELECT inputs,norm FROM type_norms WHERE source=? AND finding_id=?",
+            (self.source_instance, finding_id),
+        ).fetchone()
+        self.norm_findings.add(finding_id)
+        if quiet and row is not None and row["inputs"] == key:
+            return json.loads(row["norm"])
+        norm = compute()
+        if row is None or (row["inputs"], row["norm"]) != (key, _canonical(norm)):
+            self.db.execute(
+                "INSERT OR REPLACE INTO type_norms VALUES (?,?,?,?)",
+                (self.source_instance, finding_id, key, _canonical(norm)),
+            )
+        return norm
+
+    def retain_type_norms(self):
+        """After a complete view, forget the saved norms of findings it no longer holds."""
+        saved = self.db.execute("SELECT finding_id FROM type_norms WHERE source=?", (self.source_instance,))
+        self.db.executemany(
+            "DELETE FROM type_norms WHERE source=? AND finding_id=?",
+            [(self.source_instance, row[0]) for row in saved.fetchall() if row[0] not in self.norm_findings],
+        )
 
     def _previous_groups(self, anchor, findings):
         identities = set()

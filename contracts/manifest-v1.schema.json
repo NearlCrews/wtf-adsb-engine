@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:wtf-adsb:contracts:manifest-v1:1.0.0",
+  "$id": "urn:wtf-adsb:contracts:manifest-v1:1.1.0",
   "title": "WTF ADS-B export manifest v1",
   "description": "Structural contract. Consumers must also enforce semantic wire validation, privacy projection, size limits, checksums, and stream continuity.",
   "$ref": "#/$defs/manifest",
@@ -127,7 +127,10 @@
           "const": "wtf-adsb.manifest"
         },
         "schema_version": {
-          "const": "1.0.0"
+          "enum": [
+            "1.0.0",
+            "1.1.0"
+          ]
         },
         "profile": {
           "const": "wtf-adsb.collection.v1"

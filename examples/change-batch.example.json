@@ -1,6 +1,6 @@
 {
   "schema": "wtf-adsb.observations",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "profile": "wtf-adsb.collection.v1",
   "stream_id": "00000000-0000-4000-8000-000000000001",
   "generation": "00000000-0000-4000-8000-000000000005",
@@ -19,7 +19,7 @@
       "event_id": "00000000-0000-4000-8000-000000000002",
       "revision": 1,
       "updated_at": "2026-10-01T12:31:00Z",
-      "evidence_digest": "51fcf831e5cf4a238c6f0a75c14cb15cae0d88ad0fe7f4d448f42e602092bbfd",
+      "evidence_digest": "245a9567812cfb577fdd267788982c2770273d242836f771f172ea08763ee148",
       "observation": {
         "group": {
           "id": "00000000-0000-4000-8000-000000000004",
@@ -31,7 +31,7 @@
             {
               "id": "00000000-0000-4000-8000-000000000003",
               "hex": "ABCDEF",
-              "kind": "fast",
+              "kind": "type_speed_mismatch",
               "category": "performance",
               "value": 612,
               "unit": "kn",
@@ -46,7 +46,9 @@
                   "t": "A320",
                   "gs": 612,
                   "tas": 460,
-                  "source": "adsb_icao"
+                  "source": "adsb_icao",
+                  "alt_baro": 35000,
+                  "baro_rate": 0
                 },
                 "track": [
                   {
@@ -103,6 +105,18 @@
           "novelty": {
             "coverage_days": 0,
             "type_days": {}
+          },
+          "type_norms": {
+            "00000000-0000-4000-8000-000000000003": {
+              "low": 440,
+              "high": 470,
+              "phase": "level",
+              "band_floor_ft": 30000,
+              "band_ceiling_ft": 40000,
+              "addresses": 24,
+              "days": 21,
+              "window_days": 30
+            }
           }
         },
         "media": {

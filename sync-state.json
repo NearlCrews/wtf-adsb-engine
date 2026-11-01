@@ -140,14 +140,14 @@
     }
   },
   "shared_digests": {
-    "src/wtf_adsb_engine/wire.py": "9580526666a32b5b4c780eca020849016cff930f9203ff4a5a513585e00904fb",
+    "src/wtf_adsb_engine/wire.py": "82b720b2a5a795fd89f07a861884e089befe8d178751fb4babd48166e802378c",
     "src/wtf_adsb_engine/analysis/kinds.py": "0423a148f7de4528843944de7b5da1d6e2fd2178e23e5e811513126d775d5a71",
     "src/wtf_adsb_engine/analysis/enrichment_rules.py": "3d9c0f0634c34b3fd5afd16beb3de4e0344723613ff52b33ad5ec56ddb8321d2",
-    "src/wtf_adsb_engine/contracts/change-batch-v1.schema.json": "f12ff11d43f1f8ea41ee0232d2392d6e639a0f7eb22d412a9cd80eb4938450f8",
-    "src/wtf_adsb_engine/contracts/manifest-v1.schema.json": "15a2447fad0f4156af3c31cbb5a8a1dd261b7f8828e8d765421782279e4d5e09",
-    "src/wtf_adsb_engine/contracts/observation-v1.schema.json": "8ec5f7700b6060d0e7c7bea5356727584f00cceed910607f3b486367566c9344",
-    "contracts/change-batch-v1.schema.json": "f12ff11d43f1f8ea41ee0232d2392d6e639a0f7eb22d412a9cd80eb4938450f8",
-    "contracts/manifest-v1.schema.json": "15a2447fad0f4156af3c31cbb5a8a1dd261b7f8828e8d765421782279e4d5e09",
-    "contracts/observation-v1.schema.json": "8ec5f7700b6060d0e7c7bea5356727584f00cceed910607f3b486367566c9344"
+    "src/wtf_adsb_engine/contracts/change-batch-v1.schema.json": "c2747586fa0ffb5621a8f6f9179c0afbdce13bbb38d57a126aefbdd55b6b919a",
+    "src/wtf_adsb_engine/contracts/manifest-v1.schema.json": "790421775b5d5feb5ea15c4da82a691adcbeebdbba7fe8ee73a20dab1b0c7191",
+    "src/wtf_adsb_engine/contracts/observation-v1.schema.json": "f36ff9a6787dd97a0d8ecdc3a5282405a988e307ee19b7456cdd055cac1c8018",
+    "contracts/change-batch-v1.schema.json": "c2747586fa0ffb5621a8f6f9179c0afbdce13bbb38d57a126aefbdd55b6b919a",
+    "contracts/manifest-v1.schema.json": "790421775b5d5feb5ea15c4da82a691adcbeebdbba7fe8ee73a20dab1b0c7191",
+    "contracts/observation-v1.schema.json": "f36ff9a6787dd97a0d8ecdc3a5282405a988e307ee19b7456cdd055cac1c8018"
   }
 }

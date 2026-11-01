@@ -1,4 +1,4 @@
-# Evidence contracts, version 1.0.0
+# Evidence contracts, version 1.1.0
 
 These [Draft 2020-12 JSON Schemas](https://json-schema.org/draft/2020-12) describe
 the implemented `wtf-adsb.collection.v1` profile. Consumers select an explicit
@@ -16,6 +16,20 @@ the installed package and a consumer's pinned schema set must match these releas
 for byte. Validation reads bundled files without fetching schema URLs. The
 `$schema` declaration identifies the standard dialect; it is not an instruction
 to fetch a schema named by a received record.
+
+Contract 1.1.0 adds the optional `context.type_norms` object. Producers write
+1.1.0; the validator and these schemas also accept 1.0.0 batches and manifests,
+so a stream that began under 1.0.0 stays readable. A 1.0.0 batch cannot carry
+type norms, and any other version is refused as an unsupported contract before
+the structural check. The profile stays `wtf-adsb.collection.v1`.
+
+`type_norms` maps the ID of each norm-kind finding in the group (a seasonal speed
+record or a type speed mismatch) to its type's usual ground speed in these
+records, or to null when the records hold too few addresses or days. A norm has
+exactly `low` and `high` (whole knots, rounded to five), `phase` (`climb`,
+`descent` or `level`), `band_floor_ft` and `band_ceiling_ft`, `addresses`,
+`days` and `window_days`. Every key must name a finding of the same group. A
+group without a norm-kind finding omits the object.
 
 The wire validator applies structural schemas and then semantic checks.
 JSON Schema cannot verify canonical evidence digests, contiguous sequence

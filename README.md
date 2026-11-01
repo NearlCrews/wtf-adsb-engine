@@ -124,7 +124,8 @@ with the engine process's permissions; the SDK is not a security sandbox.
 
 ## Evidence and delivery
 
-The implemented interface is `wtf-adsb.collection.v1`, contract version `1.0.0`.
+The implemented interface is `wtf-adsb.collection.v1`, contract version `1.1.0`
+(readers also accept `1.0.0` batches).
 It exports reviewed collection groups, findings, context and bounded aircraft
 tracks. The existing analysis lives behind the compatibility collection plugin;
 individual rules have not all become separate plugins.

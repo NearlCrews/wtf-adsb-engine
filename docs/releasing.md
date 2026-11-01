@@ -28,7 +28,7 @@ unresolved data redistribution terms.
 ## Prepare a version
 
 Application version `0.1.0`, SDK API version `1`, and evidence contract version
-`1.0.0` describe different interfaces. Update the relevant version when its
+`1.1.0` describe different interfaces. Update the relevant version when its
 compatibility changes; changing a package version does not authorize a wire
 breaking change.
 
