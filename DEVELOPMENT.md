@@ -125,6 +125,39 @@ hostnames are excluded from the export profile. Aircraft tracks can still reveal
 a general reception region. Keep the feed private and mount it read-only for the
 consumer.
 
+## Rules for changes
+
+- Keep the installable package in `src/wtf_adsb_engine/`, tests in `tests/`,
+  contract assets in `contracts/`, runnable examples in `examples/`, and
+  maintenance scripts in `tools/`.
+- The engine collects, analyzes, and exports factual aircraft evidence. Site
+  policy, article writing, themes, and publication belong to downstream
+  consumers.
+- `make check` must pass. Tests run offline and never spend AI or paid-provider
+  credits.
+- Keep public instructions self-contained. Update the README, the relevant
+  guides, and the changelog for user-visible changes. Do not invent repository
+  URLs, contacts, release dates, or supported platforms.
+- Pin dependencies to exact, verified stable versions and update `uv.lock` with
+  every dependency change. `tools/check_dependencies.py` is the read-only
+  version audit; it uses the network and stays out of the offline tests.
+- Preserve stable identities, durable revision and cursor transactions,
+  immutable delivery retries, source provenance, and explicit retractions. A
+  missing retained observation never means deletion.
+- Build export data from reviewed field allowlists. Exclude receiver
+  coordinates, receiver-relative measurements, private hostnames, credentials,
+  journal prose, and local or archive paths. Aircraft tracks are allowed by
+  the collection profile.
+- Installed plugins are trusted code. Do not describe the in-process plugin
+  interface as a security sandbox.
+- Keep runtime state, live databases, raw archives, and credentials out of
+  version control. A local `.private/` directory, if used, stays mode 0700.
+- Preserve `LICENSE`, the third-party notices, and separate data-source terms.
+  Review packaging and data provenance before a release.
+- `tools/setup.py` uses only the standard library. Keep it in step with
+  [docs/setup-interview.md](docs/setup-interview.md); `tests/test_setup_tool.py`
+  compares the two.
+
 ## Shared files
 
 The publisher carries copies of `wire.py`, `analysis/kinds.py`,

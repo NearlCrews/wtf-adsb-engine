@@ -7,6 +7,7 @@ unless a guide says otherwise.
 
 | Task | Guide |
 | --- | --- |
+| Have an AI assistant configure and start Docker Compose | [Setup interview](setup-interview.md) and [AGENTS.md](../AGENTS.md) |
 | Configure a receiver, replay, and output | [Configuration](configuration.md) |
 | Run, inspect health, back up, and troubleshoot | [Operations](operations.md) |
 | Build a container, migrate a journal, or serve the private viewer | [Deployment](deployment.md) |
