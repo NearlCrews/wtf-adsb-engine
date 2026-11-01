@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "live_commit": null,
+  "modules": {},
+  "shared_digests": {
+    "src/wtf_adsb_engine/wire.py": "9580526666a32b5b4c780eca020849016cff930f9203ff4a5a513585e00904fb",
+    "src/wtf_adsb_engine/contracts/change-batch-v1.schema.json": "f12ff11d43f1f8ea41ee0232d2392d6e639a0f7eb22d412a9cd80eb4938450f8",
+    "src/wtf_adsb_engine/contracts/manifest-v1.schema.json": "15a2447fad0f4156af3c31cbb5a8a1dd261b7f8828e8d765421782279e4d5e09",
+    "src/wtf_adsb_engine/contracts/observation-v1.schema.json": "8ec5f7700b6060d0e7c7bea5356727584f00cceed910607f3b486367566c9344",
+    "contracts/change-batch-v1.schema.json": "f12ff11d43f1f8ea41ee0232d2392d6e639a0f7eb22d412a9cd80eb4938450f8",
+    "contracts/manifest-v1.schema.json": "15a2447fad0f4156af3c31cbb5a8a1dd261b7f8828e8d765421782279e4d5e09",
+    "contracts/observation-v1.schema.json": "8ec5f7700b6060d0e7c7bea5356727584f00cceed910607f3b486367566c9344"
+  }
+}
