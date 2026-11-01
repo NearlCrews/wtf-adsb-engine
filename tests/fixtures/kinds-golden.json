@@ -1,0 +1,2233 @@
+{
+ "app.ABSORBED_KINDS": {
+  "type": "dict",
+  "value": [
+   [
+    "circling",
+    {
+     "type": "tuple",
+     "value": [
+      "course_reversal",
+      "loitering"
+     ]
+    }
+   ],
+   [
+    "survey_grid",
+    {
+     "type": "tuple",
+     "value": [
+      "course_reversal",
+      "parallel_passes"
+     ]
+    }
+   ]
+  ]
+ },
+ "app.BEST_WINDOW_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "altitude_oscillation",
+   "course_reversal",
+   "descending_spiral",
+   "extreme_turn_rate",
+   "hovering",
+   "parallel_passes",
+   "prolonged_holding",
+   "survey_grid",
+   "thermal_soaring"
+  ]
+ },
+ "app.DAILY_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "database_watch",
+   "emitter_type_mismatch",
+   "first_country_here",
+   "first_type_here",
+   "identity_conflict",
+   "military",
+   "notable_variant",
+   "rare_here",
+   "unusual_emitter",
+   "vintage",
+   "watch_type",
+   "watchlist_match"
+  ]
+ },
+ "app.Detector.NUMERIC_FIELDS": {
+  "type": "dict",
+  "value": [
+   [
+    "fast",
+    {
+     "type": "tuple",
+     "value": [
+      "gs"
+     ]
+    }
+   ],
+   [
+    "high",
+    {
+     "type": "tuple",
+     "value": [
+      "alt_baro"
+     ]
+    }
+   ],
+   [
+    "vertical",
+    {
+     "type": "tuple",
+     "value": [
+      "baro_rate"
+     ]
+    }
+   ],
+   [
+    "wind_boost",
+    {
+     "type": "tuple",
+     "value": [
+      "gs",
+      "tas"
+     ]
+    }
+   ],
+   [
+    "altitude_gap",
+    {
+     "type": "tuple",
+     "value": [
+      "alt_baro",
+      "alt_geom"
+     ]
+    }
+   ],
+   [
+    "distant",
+    {
+     "type": "tuple",
+     "value": [
+      "lat",
+      "lon"
+     ]
+    }
+   ],
+   [
+    "type_speed_mismatch",
+    {
+     "type": "tuple",
+     "value": [
+      "gs"
+     ]
+    }
+   ],
+   [
+    "type_altitude_mismatch",
+    {
+     "type": "tuple",
+     "value": [
+      "alt_baro"
+     ]
+    }
+   ],
+   [
+    "above_rated_altitude",
+    {
+     "type": "tuple",
+     "value": [
+      "alt_baro"
+     ]
+    }
+   ],
+   [
+    "above_rated_speed",
+    {
+     "type": "tuple",
+     "value": [
+      "gs",
+      "track",
+      "alt_baro",
+      "tas"
+     ]
+    }
+   ]
+  ]
+ },
+ "app.Detector.SIGNED_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "vertical"
+  ]
+ },
+ "app.Detector.WIDE_SPREAD_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "above_rated_altitude",
+   "altitude_gap",
+   "high",
+   "type_altitude_mismatch"
+  ]
+ },
+ "curation.BALLOON_FOLDS": {
+  "type": "frozenset",
+  "value": [
+   "high",
+   "outlier_alt_baro",
+   "outlier_archive_alt",
+   "outlier_gs"
+  ]
+ },
+ "curation.CIRCUIT_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "circling",
+   "confined_activity",
+   "descending_spiral",
+   "loitering",
+   "prolonged_holding"
+  ]
+ },
+ "curation.CONTEXT_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "altitude_oscillation",
+   "circling",
+   "confined_activity",
+   "course_reversal",
+   "emitter_type_mismatch",
+   "gnss_integrity_loss",
+   "loitering",
+   "parallel_passes",
+   "prolonged_holding",
+   "rapid_climb",
+   "repeated_passes",
+   "vfr_code_above_fl180"
+  ]
+ },
+ "curation.DATA_QUALITY_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "altitude_gap",
+   "correlated_data_anomaly",
+   "emitter_type_mismatch",
+   "gnss_integrity_cluster",
+   "gnss_integrity_loss",
+   "identity_conflict",
+   "position_jump",
+   "space_category",
+   "type_altitude_mismatch",
+   "type_speed_mismatch"
+  ]
+ },
+ "curation.ENVELOPE_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "type_altitude_mismatch",
+   "type_speed_mismatch"
+  ]
+ },
+ "curation.FIRST_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "first_country_here",
+   "first_type_here"
+  ]
+ },
+ "curation.IDENTITY_KINDS": {
+  "type": "set",
+  "value": [
+   "database_watch",
+   "first_country_here",
+   "first_type_here",
+   "military",
+   "notable_variant",
+   "rare_here",
+   "unusual_emitter",
+   "vintage",
+   "watch_type",
+   "watchlist_match"
+  ]
+ },
+ "curation.INTEREST": {
+  "type": "dict",
+  "value": [
+   [
+    "rapid_descent",
+    {
+     "type": "int",
+     "value": "40"
+    }
+   ],
+   [
+    "rapid_climb",
+    {
+     "type": "int",
+     "value": "34"
+    }
+   ],
+   [
+    "descending_spiral",
+    {
+     "type": "int",
+     "value": "42"
+    }
+   ],
+   [
+    "possible_go_around",
+    {
+     "type": "int",
+     "value": "34"
+    }
+   ],
+   [
+    "departure_return",
+    {
+     "type": "int",
+     "value": "36"
+    }
+   ],
+   [
+    "altitude_oscillation",
+    {
+     "type": "int",
+     "value": "34"
+    }
+   ],
+   [
+    "parallel_passes",
+    {
+     "type": "int",
+     "value": "36"
+    }
+   ],
+   [
+    "repeated_passes",
+    {
+     "type": "int",
+     "value": "32"
+    }
+   ],
+   [
+    "prolonged_holding",
+    {
+     "type": "int",
+     "value": "30"
+    }
+   ],
+   [
+    "hovering",
+    {
+     "type": "int",
+     "value": "28"
+    }
+   ],
+   [
+    "circling",
+    {
+     "type": "int",
+     "value": "20"
+    }
+   ],
+   [
+    "loitering",
+    {
+     "type": "int",
+     "value": "16"
+    }
+   ],
+   [
+    "course_reversal",
+    {
+     "type": "int",
+     "value": "8"
+    }
+   ],
+   [
+    "confined_activity",
+    {
+     "type": "int",
+     "value": "4"
+    }
+   ],
+   [
+    "watch_type",
+    {
+     "type": "int",
+     "value": "32"
+    }
+   ],
+   [
+    "watchlist_match",
+    {
+     "type": "int",
+     "value": "34"
+    }
+   ],
+   [
+    "vintage",
+    {
+     "type": "int",
+     "value": "18"
+    }
+   ],
+   [
+    "rare_here",
+    {
+     "type": "int",
+     "value": "30"
+    }
+   ],
+   [
+    "military",
+    {
+     "type": "int",
+     "value": "6"
+    }
+   ],
+   [
+    "database_watch",
+    {
+     "type": "int",
+     "value": "6"
+    }
+   ],
+   [
+    "unusual_emitter",
+    {
+     "type": "int",
+     "value": "18"
+    }
+   ],
+   [
+    "fast",
+    {
+     "type": "int",
+     "value": "28"
+    }
+   ],
+   [
+    "high",
+    {
+     "type": "int",
+     "value": "26"
+    }
+   ],
+   [
+    "vertical",
+    {
+     "type": "int",
+     "value": "30"
+    }
+   ],
+   [
+    "wind_boost",
+    {
+     "type": "int",
+     "value": "24"
+    }
+   ],
+   [
+    "altitude_gap",
+    {
+     "type": "int",
+     "value": "16"
+    }
+   ],
+   [
+    "correlated_data_anomaly",
+    {
+     "type": "int",
+     "value": "34"
+    }
+   ],
+   [
+    "position_jump",
+    {
+     "type": "int",
+     "value": "24"
+    }
+   ],
+   [
+    "type_speed_mismatch",
+    {
+     "type": "int",
+     "value": "26"
+    }
+   ],
+   [
+    "type_altitude_mismatch",
+    {
+     "type": "int",
+     "value": "26"
+    }
+   ],
+   [
+    "space_category",
+    {
+     "type": "int",
+     "value": "20"
+    }
+   ],
+   [
+    "tcas_ra",
+    {
+     "type": "int",
+     "value": "40"
+    }
+   ],
+   [
+    "special_squawk_7400",
+    {
+     "type": "int",
+     "value": "45"
+    }
+   ],
+   [
+    "special_use_code",
+    {
+     "type": "int",
+     "value": "30"
+    }
+   ],
+   [
+    "stratospheric_balloon",
+    {
+     "type": "int",
+     "value": "40"
+    }
+   ],
+   [
+    "formation_flight",
+    {
+     "type": "int",
+     "value": "36"
+    }
+   ],
+   [
+    "holding_stack",
+    {
+     "type": "int",
+     "value": "30"
+    }
+   ],
+   [
+    "gnss_integrity_loss",
+    {
+     "type": "int",
+     "value": "10"
+    }
+   ],
+   [
+    "gnss_integrity_cluster",
+    {
+     "type": "int",
+     "value": "32"
+    }
+   ],
+   [
+    "survey_grid",
+    {
+     "type": "int",
+     "value": "32"
+    }
+   ],
+   [
+    "thermal_soaring",
+    {
+     "type": "int",
+     "value": "22"
+    }
+   ],
+   [
+    "selected_altitude_overshoot",
+    {
+     "type": "int",
+     "value": "0"
+    }
+   ],
+   [
+    "extreme_turn_rate",
+    {
+     "type": "int",
+     "value": "0"
+    }
+   ],
+   [
+    "identity_conflict",
+    {
+     "type": "int",
+     "value": "24"
+    }
+   ],
+   [
+    "first_type_here",
+    {
+     "type": "int",
+     "value": "34"
+    }
+   ],
+   [
+    "first_country_here",
+    {
+     "type": "int",
+     "value": "26"
+    }
+   ],
+   [
+    "notable_variant",
+    {
+     "type": "int",
+     "value": "34"
+    }
+   ],
+   [
+    "emitter_type_mismatch",
+    {
+     "type": "int",
+     "value": "8"
+    }
+   ],
+   [
+    "vfr_code_above_fl180",
+    {
+     "type": "int",
+     "value": "8"
+    }
+   ],
+   [
+    "seasonal_speed_record",
+    {
+     "type": "int",
+     "value": "20"
+    }
+   ],
+   [
+    "above_rated_altitude",
+    {
+     "type": "int",
+     "value": "26"
+    }
+   ],
+   [
+    "above_rated_speed",
+    {
+     "type": "int",
+     "value": "24"
+    }
+   ]
+  ]
+ },
+ "curation.NORM_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "seasonal_speed_record",
+   "type_speed_mismatch"
+  ]
+ },
+ "curation.PERFORMANCE_TYPE_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "above_rated_altitude",
+   "above_rated_speed",
+   "seasonal_speed_record",
+   "type_altitude_mismatch",
+   "type_speed_mismatch"
+  ]
+ },
+ "curation.RECORD_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "seasonal_speed_record"
+  ]
+ },
+ "curation.REPEAT_RULES kinds": {
+  "type": "list",
+  "value": [
+   {
+    "type": "list",
+    "value": [
+     "same_aircraft_day",
+     null
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "identity_repeat",
+     null
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "kind_repeat",
+     null
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "vintage_repeat",
+     {
+      "type": "list",
+      "value": [
+       "database_watch",
+       "first_country_here",
+       "first_type_here",
+       "military",
+       "notable_variant",
+       "rare_here",
+       "unusual_emitter",
+       "vintage",
+       "watch_type",
+       "watchlist_match"
+      ]
+     }
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "routine_type",
+     {
+      "type": "list",
+      "value": [
+       "database_watch",
+       "first_country_here",
+       "first_type_here",
+       "military",
+       "notable_variant",
+       "rare_here",
+       "unusual_emitter",
+       "vintage",
+       "watch_type",
+       "watchlist_match"
+      ]
+     }
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "type_repeat",
+     {
+      "type": "list",
+      "value": [
+       "watch_type"
+      ]
+     }
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "variant_repeat",
+     {
+      "type": "list",
+      "value": [
+       "notable_variant"
+      ]
+     }
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "first_repeat",
+     {
+      "type": "list",
+      "value": [
+       "first_country_here",
+       "first_type_here"
+      ]
+     }
+    ]
+   },
+   {
+    "type": "list",
+    "value": [
+     "series_repeat",
+     null
+    ]
+   }
+  ]
+ },
+ "curation.SERIES_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "above_rated_altitude",
+   "above_rated_speed",
+   "identity_conflict",
+   "seasonal_speed_record"
+  ]
+ },
+ "curation.STATUS_EXCEPTIONS": {
+  "type": "frozenset",
+  "value": [
+   "special_squawk_7400",
+   "special_squawk_7500",
+   "special_squawk_7600",
+   "special_squawk_7700",
+   "special_squawk_downed",
+   "special_squawk_general",
+   "special_squawk_nordo",
+   "special_squawk_unlawful"
+  ]
+ },
+ "curation.kind_family probes": {
+  "type": "dict",
+  "value": [
+   [
+    "above_rated_altitude",
+    "above_rated_altitude"
+   ],
+   [
+    "above_rated_speed",
+    "above_rated_speed"
+   ],
+   [
+    "altitude_gap",
+    "altitude_gap"
+   ],
+   [
+    "altitude_oscillation",
+    "altitude_oscillation"
+   ],
+   [
+    "archive_squawk_7400",
+    "squawk"
+   ],
+   [
+    "archive_squawk_7500",
+    "squawk"
+   ],
+   [
+    "archive_squawk_7600",
+    "squawk"
+   ],
+   [
+    "archive_squawk_7700",
+    "squawk"
+   ],
+   [
+    "circling",
+    "circling"
+   ],
+   [
+    "confined_activity",
+    "confined_activity"
+   ],
+   [
+    "correlated_data_anomaly",
+    "correlated_data_anomaly"
+   ],
+   [
+    "course_reversal",
+    "course_reversal"
+   ],
+   [
+    "database_watch",
+    "database_watch"
+   ],
+   [
+    "departure_return",
+    "departure_return"
+   ],
+   [
+    "descending_spiral",
+    "descending_spiral"
+   ],
+   [
+    "distant",
+    "distant"
+   ],
+   [
+    "emitter_type_mismatch",
+    "emitter_type_mismatch"
+   ],
+   [
+    "extreme_turn_rate",
+    "extreme_turn_rate"
+   ],
+   [
+    "fast",
+    "fast"
+   ],
+   [
+    "first_country_here",
+    "first_country_here"
+   ],
+   [
+    "first_type_here",
+    "first_type_here"
+   ],
+   [
+    "formation_flight",
+    "formation_flight"
+   ],
+   [
+    "gnss_integrity_cluster",
+    "gnss_integrity_cluster"
+   ],
+   [
+    "gnss_integrity_loss",
+    "gnss_integrity_loss"
+   ],
+   [
+    "high",
+    "high"
+   ],
+   [
+    "holding_stack",
+    "holding_stack"
+   ],
+   [
+    "hovering",
+    "hovering"
+   ],
+   [
+    "identity_conflict",
+    "identity_conflict"
+   ],
+   [
+    "loitering",
+    "loitering"
+   ],
+   [
+    "military",
+    "military"
+   ],
+   [
+    "notable_variant",
+    "notable_variant"
+   ],
+   [
+    "outlier_alt_baro",
+    "outlier_alt_baro"
+   ],
+   [
+    "outlier_archive_alt",
+    "outlier_archive_alt"
+   ],
+   [
+    "outlier_baro_rate",
+    "outlier_baro_rate"
+   ],
+   [
+    "outlier_gs",
+    "outlier_gs"
+   ],
+   [
+    "parallel_passes",
+    "parallel_passes"
+   ],
+   [
+    "position_jump",
+    "position_jump"
+   ],
+   [
+    "possible_go_around",
+    "possible_go_around"
+   ],
+   [
+    "prolonged_holding",
+    "prolonged_holding"
+   ],
+   [
+    "rapid_climb",
+    "rapid_climb"
+   ],
+   [
+    "rapid_descent",
+    "rapid_descent"
+   ],
+   [
+    "rare_here",
+    "rare_here"
+   ],
+   [
+    "repeated_passes",
+    "repeated_passes"
+   ],
+   [
+    "seasonal_speed_record",
+    "seasonal_speed_record"
+   ],
+   [
+    "selected_altitude_overshoot",
+    "selected_altitude_overshoot"
+   ],
+   [
+    "space_category",
+    "space_category"
+   ],
+   [
+    "special_squawk_7400",
+    "squawk"
+   ],
+   [
+    "special_squawk_7500",
+    "squawk"
+   ],
+   [
+    "special_squawk_7600",
+    "squawk"
+   ],
+   [
+    "special_squawk_7700",
+    "squawk"
+   ],
+   [
+    "special_squawk_downed",
+    "squawk"
+   ],
+   [
+    "special_squawk_general",
+    "squawk"
+   ],
+   [
+    "special_squawk_lifeguard",
+    "squawk"
+   ],
+   [
+    "special_squawk_minfuel",
+    "squawk"
+   ],
+   [
+    "special_squawk_nordo",
+    "squawk"
+   ],
+   [
+    "special_squawk_unlawful",
+    "squawk"
+   ],
+   [
+    "special_use_code",
+    "special_use_code"
+   ],
+   [
+    "stratospheric_balloon",
+    "stratospheric_balloon"
+   ],
+   [
+    "survey_grid",
+    "survey_grid"
+   ],
+   [
+    "tcas_ra",
+    "tcas_ra"
+   ],
+   [
+    "thermal_soaring",
+    "thermal_soaring"
+   ],
+   [
+    "type_altitude_mismatch",
+    "type_altitude_mismatch"
+   ],
+   [
+    "type_speed_mismatch",
+    "type_speed_mismatch"
+   ],
+   [
+    "unusual_emitter",
+    "unusual_emitter"
+   ],
+   [
+    "vertical",
+    "vertical"
+   ],
+   [
+    "vfr_code_above_fl180",
+    "vfr_code_above_fl180"
+   ],
+   [
+    "vintage",
+    "vintage"
+   ],
+   [
+    "watch_type",
+    "watch_type"
+   ],
+   [
+    "watchlist_match",
+    "watchlist_match"
+   ],
+   [
+    "wind_boost",
+    "wind_boost"
+   ],
+   [
+    "no_such_kind",
+    "no_such_kind"
+   ]
+  ]
+ },
+ "curation.topic probes": {
+  "type": "dict",
+  "value": [
+   [
+    "above_rated_altitude",
+    "performance"
+   ],
+   [
+    "above_rated_speed",
+    "performance"
+   ],
+   [
+    "altitude_gap",
+    "data-quality"
+   ],
+   [
+    "altitude_oscillation",
+    "vertical-motion"
+   ],
+   [
+    "archive_squawk_7400",
+    "transponder"
+   ],
+   [
+    "archive_squawk_7500",
+    "transponder"
+   ],
+   [
+    "archive_squawk_7600",
+    "transponder"
+   ],
+   [
+    "archive_squawk_7700",
+    "transponder"
+   ],
+   [
+    "circling",
+    "circling"
+   ],
+   [
+    "confined_activity",
+    "circling"
+   ],
+   [
+    "correlated_data_anomaly",
+    "data-quality"
+   ],
+   [
+    "course_reversal",
+    "course_reversal"
+   ],
+   [
+    "database_watch",
+    "aircraft"
+   ],
+   [
+    "departure_return",
+    "departure_return"
+   ],
+   [
+    "descending_spiral",
+    "circling"
+   ],
+   [
+    "distant",
+    "distant"
+   ],
+   [
+    "emitter_type_mismatch",
+    "data-quality"
+   ],
+   [
+    "extreme_turn_rate",
+    "extreme_turn_rate"
+   ],
+   [
+    "fast",
+    "performance"
+   ],
+   [
+    "first_country_here",
+    "aircraft"
+   ],
+   [
+    "first_type_here",
+    "aircraft"
+   ],
+   [
+    "formation_flight",
+    "formation_flight"
+   ],
+   [
+    "gnss_integrity_cluster",
+    "data-quality"
+   ],
+   [
+    "gnss_integrity_loss",
+    "data-quality"
+   ],
+   [
+    "high",
+    "performance"
+   ],
+   [
+    "holding_stack",
+    "holding_stack"
+   ],
+   [
+    "hovering",
+    "hovering"
+   ],
+   [
+    "identity_conflict",
+    "data-quality"
+   ],
+   [
+    "loitering",
+    "circling"
+   ],
+   [
+    "military",
+    "aircraft"
+   ],
+   [
+    "notable_variant",
+    "aircraft"
+   ],
+   [
+    "outlier_alt_baro",
+    "data-quality"
+   ],
+   [
+    "outlier_archive_alt",
+    "data-quality"
+   ],
+   [
+    "outlier_baro_rate",
+    "data-quality"
+   ],
+   [
+    "outlier_gs",
+    "data-quality"
+   ],
+   [
+    "parallel_passes",
+    "passes"
+   ],
+   [
+    "position_jump",
+    "data-quality"
+   ],
+   [
+    "possible_go_around",
+    "possible_go_around"
+   ],
+   [
+    "prolonged_holding",
+    "circling"
+   ],
+   [
+    "rapid_climb",
+    "vertical-motion"
+   ],
+   [
+    "rapid_descent",
+    "vertical-motion"
+   ],
+   [
+    "rare_here",
+    "aircraft"
+   ],
+   [
+    "repeated_passes",
+    "passes"
+   ],
+   [
+    "seasonal_speed_record",
+    "performance"
+   ],
+   [
+    "selected_altitude_overshoot",
+    "vertical-motion"
+   ],
+   [
+    "space_category",
+    "data-quality"
+   ],
+   [
+    "special_squawk_7400",
+    "transponder"
+   ],
+   [
+    "special_squawk_7500",
+    "transponder"
+   ],
+   [
+    "special_squawk_7600",
+    "transponder"
+   ],
+   [
+    "special_squawk_7700",
+    "transponder"
+   ],
+   [
+    "special_squawk_downed",
+    "transponder"
+   ],
+   [
+    "special_squawk_general",
+    "transponder"
+   ],
+   [
+    "special_squawk_lifeguard",
+    "transponder"
+   ],
+   [
+    "special_squawk_minfuel",
+    "transponder"
+   ],
+   [
+    "special_squawk_nordo",
+    "transponder"
+   ],
+   [
+    "special_squawk_unlawful",
+    "transponder"
+   ],
+   [
+    "special_use_code",
+    "transponder"
+   ],
+   [
+    "stratospheric_balloon",
+    "stratospheric_balloon"
+   ],
+   [
+    "survey_grid",
+    "passes"
+   ],
+   [
+    "tcas_ra",
+    "tcas_ra"
+   ],
+   [
+    "thermal_soaring",
+    "thermal_soaring"
+   ],
+   [
+    "type_altitude_mismatch",
+    "data-quality"
+   ],
+   [
+    "type_speed_mismatch",
+    "data-quality"
+   ],
+   [
+    "unusual_emitter",
+    "aircraft"
+   ],
+   [
+    "vertical",
+    "vertical-motion"
+   ],
+   [
+    "vfr_code_above_fl180",
+    "transponder"
+   ],
+   [
+    "vintage",
+    "aircraft"
+   ],
+   [
+    "watch_type",
+    "aircraft"
+   ],
+   [
+    "watchlist_match",
+    "aircraft"
+   ],
+   [
+    "wind_boost",
+    "performance"
+   ],
+   [
+    "no_such_kind",
+    "no_such_kind"
+   ]
+  ]
+ },
+ "episode_evidence.MLAT_ESTIMATE_KINDS": {
+  "type": "set",
+  "value": [
+   "above_rated_speed",
+   "fast",
+   "outlier_gs",
+   "position_jump",
+   "seasonal_speed_record",
+   "type_speed_mismatch",
+   "wind_boost"
+  ]
+ },
+ "episode_replay.DETAIL_KINDS": {
+  "type": "tuple",
+  "value": [
+   "gnss_integrity_loss",
+   "selected_altitude_overshoot"
+  ]
+ },
+ "episode_replay.ORBIT_KINDS": {
+  "type": "tuple",
+  "value": [
+   "circling",
+   "prolonged_holding"
+  ]
+ },
+ "flightaware.CONTEXT_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "altitude_oscillation",
+   "circling",
+   "confined_activity",
+   "course_reversal",
+   "emitter_type_mismatch",
+   "gnss_integrity_loss",
+   "loitering",
+   "parallel_passes",
+   "prolonged_holding",
+   "rapid_climb",
+   "repeated_passes",
+   "vfr_code_above_fl180"
+  ]
+ },
+ "history_backfill.CROSS_DAY_KINDS": {
+  "type": "tuple",
+  "value": [
+   "first_type_here",
+   "first_country_here",
+   "seasonal_speed_record"
+  ]
+ },
+ "maneuvers.CATEGORIES": {
+  "type": "dict",
+  "value": [
+   [
+    "rapid_descent",
+    "performance"
+   ],
+   [
+    "rapid_climb",
+    "performance"
+   ],
+   [
+    "selected_altitude_overshoot",
+    "performance"
+   ],
+   [
+    "correlated_data_anomaly",
+    "oddities"
+   ],
+   [
+    "gnss_integrity_loss",
+    "oddities"
+   ],
+   [
+    "gnss_integrity_cluster",
+    "oddities"
+   ],
+   [
+    "stratospheric_balloon",
+    "airframes"
+   ],
+   [
+    "tcas_ra",
+    "signals"
+   ],
+   [
+    "special_use_code",
+    "signals"
+   ]
+  ]
+ },
+ "maneuvers.FRESHNESS_ROBUST_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "formation_flight",
+   "holding_stack",
+   "stratospheric_balloon",
+   "survey_grid"
+  ]
+ },
+ "maneuvers.KINDS": {
+  "type": "set",
+  "value": [
+   "altitude_oscillation",
+   "correlated_data_anomaly",
+   "course_reversal",
+   "departure_return",
+   "descending_spiral",
+   "extreme_turn_rate",
+   "formation_flight",
+   "gnss_integrity_cluster",
+   "gnss_integrity_loss",
+   "holding_stack",
+   "hovering",
+   "parallel_passes",
+   "possible_go_around",
+   "prolonged_holding",
+   "rapid_climb",
+   "rapid_descent",
+   "selected_altitude_overshoot",
+   "special_use_code",
+   "stratospheric_balloon",
+   "survey_grid",
+   "tcas_ra",
+   "thermal_soaring"
+  ]
+ },
+ "maneuvers.PATTERN_KINDS": {
+  "type": "set",
+  "value": [
+   "altitude_oscillation",
+   "course_reversal",
+   "departure_return",
+   "descending_spiral",
+   "extreme_turn_rate",
+   "formation_flight",
+   "holding_stack",
+   "hovering",
+   "parallel_passes",
+   "possible_go_around",
+   "prolonged_holding",
+   "survey_grid",
+   "thermal_soaring"
+  ]
+ },
+ "maneuvers.PRIORITY_STATUSES": {
+  "type": "set",
+  "value": [
+   "lifeguard",
+   "minfuel"
+  ]
+ },
+ "maneuvers.STATUS_CODES": {
+  "type": "frozenset",
+  "value": [
+   "7400",
+   "7500",
+   "7600",
+   "7700"
+  ]
+ },
+ "maneuvers.STATUS_MEANINGS": {
+  "type": "dict",
+  "value": [
+   [
+    "7400",
+    "lost_link"
+   ],
+   [
+    "7500",
+    "unlawful"
+   ],
+   [
+    "7600",
+    "nordo"
+   ],
+   [
+    "7700",
+    "general"
+   ]
+  ]
+ },
+ "maneuvers.STATUS_NAMES": {
+  "type": "frozenset",
+  "value": [
+   "downed",
+   "general",
+   "lifeguard",
+   "minfuel",
+   "nordo",
+   "unlawful"
+  ]
+ },
+ "rules.ARCHIVE_SQUAWK_PREFIX": "archive_squawk_",
+ "rules.GROUND_SPEED_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "fast",
+   "seasonal_speed_record"
+  ]
+ },
+ "rules.IDENTITY_LED_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "above_rated_altitude",
+   "above_rated_speed",
+   "first_country_here",
+   "first_type_here",
+   "military",
+   "notable_variant",
+   "rare_here",
+   "seasonal_speed_record",
+   "vintage",
+   "watch_type"
+  ]
+ },
+ "rules.LIVE_SQUAWK_PREFIX": "special_squawk_",
+ "rules.MEASURED_FIELDS": {
+  "type": "dict",
+  "value": [
+   [
+    "fast",
+    "gs"
+   ],
+   [
+    "type_speed_mismatch",
+    "gs"
+   ],
+   [
+    "outlier_gs",
+    "gs"
+   ],
+   [
+    "wind_boost",
+    "gs"
+   ],
+   [
+    "above_rated_speed",
+    "gs"
+   ],
+   [
+    "vertical",
+    "baro_rate"
+   ],
+   [
+    "outlier_baro_rate",
+    "baro_rate"
+   ]
+  ]
+ },
+ "rules.NORM_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "seasonal_speed_record",
+   "type_speed_mismatch"
+  ]
+ },
+ "rules.RATED_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "above_rated_altitude",
+   "above_rated_speed"
+  ]
+ },
+ "rules.SQUAWK_PREFIXES": {
+  "type": "tuple",
+  "value": [
+   "special_squawk_",
+   "archive_squawk_"
+  ]
+ },
+ "rules.STATUS_CODES": {
+  "type": "frozenset",
+  "value": [
+   "7400",
+   "7500",
+   "7600",
+   "7700"
+  ]
+ },
+ "rules.STATUS_MEANINGS": {
+  "type": "dict",
+  "value": [
+   [
+    "7400",
+    "lost_link"
+   ],
+   [
+    "7500",
+    "unlawful"
+   ],
+   [
+    "7600",
+    "nordo"
+   ],
+   [
+    "7700",
+    "general"
+   ]
+  ]
+ },
+ "rules.STATUS_NAMES": {
+  "type": "frozenset",
+  "value": [
+   "downed",
+   "general",
+   "lifeguard",
+   "minfuel",
+   "nordo",
+   "unlawful"
+  ]
+ },
+ "selection.FIXED_SCORES": {
+  "type": "dict",
+  "value": [
+   [
+    "identity_conflict",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "78"
+      },
+      "Deterministic identity checks disagree; this is a data finding, not an identity claim"
+     ]
+    }
+   ],
+   [
+    "military",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "55"
+      },
+      "Military classification alone is a routine identity tag"
+     ]
+    }
+   ],
+   [
+    "database_watch",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "45"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "unusual_emitter",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "65"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "vertical",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "75"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "wind_boost",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "75"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "altitude_gap",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "75"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "distant",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "30"
+      },
+      null
+     ]
+    }
+   ]
+  ]
+ },
+ "selection.NOVELTY_KINDS": {
+  "type": "set",
+  "value": [
+   "first_country_here",
+   "first_type_here",
+   "notable_variant"
+  ]
+ },
+ "selection.NUMERIC_KINDS": {
+  "type": "set",
+  "value": [
+   "altitude_gap",
+   "distant",
+   "fast",
+   "high",
+   "vertical",
+   "wind_boost"
+  ]
+ },
+ "stories.EPISODE_KINDS": {
+  "type": "set",
+  "value": [
+   "altitude_oscillation",
+   "correlated_data_anomaly",
+   "course_reversal",
+   "departure_return",
+   "descending_spiral",
+   "extreme_turn_rate",
+   "formation_flight",
+   "gnss_integrity_cluster",
+   "gnss_integrity_loss",
+   "holding_stack",
+   "hovering",
+   "parallel_passes",
+   "possible_go_around",
+   "prolonged_holding",
+   "rapid_climb",
+   "rapid_descent",
+   "selected_altitude_overshoot",
+   "special_use_code",
+   "stratospheric_balloon",
+   "survey_grid",
+   "tcas_ra",
+   "thermal_soaring"
+  ]
+ },
+ "stories.FIRST_SIGHTING_KINDS": {
+  "type": "set",
+  "value": [
+   "first_country_here",
+   "first_type_here"
+  ]
+ },
+ "stories.KINDS": {
+  "type": "set",
+  "value": [
+   "above_rated_altitude",
+   "above_rated_speed",
+   "altitude_gap",
+   "circling",
+   "confined_activity",
+   "database_watch",
+   "emitter_type_mismatch",
+   "fast",
+   "first_country_here",
+   "first_type_here",
+   "high",
+   "identity_conflict",
+   "loitering",
+   "military",
+   "notable_variant",
+   "outlier_alt_baro",
+   "outlier_archive_alt",
+   "outlier_baro_rate",
+   "outlier_gs",
+   "position_jump",
+   "rare_here",
+   "repeated_passes",
+   "seasonal_speed_record",
+   "space_category",
+   "type_altitude_mismatch",
+   "type_speed_mismatch",
+   "unusual_emitter",
+   "vertical",
+   "vintage",
+   "watch_type",
+   "watchlist_match",
+   "wind_boost"
+  ]
+ },
+ "stories.KIND_READINGS": {
+  "type": "dict",
+  "value": [
+   [
+    "selected_altitude_overshoot",
+    {
+     "type": "dict",
+     "value": [
+      [
+       "nav_altitude_mcp",
+       {
+        "type": "tuple",
+        "value": [
+         "Selected altitude (autopilot setting)",
+         "ft"
+        ]
+       }
+      ],
+      [
+       "nav_qnh",
+       {
+        "type": "tuple",
+        "value": [
+         "Altimeter setting",
+         "hPa"
+        ]
+       }
+      ]
+     ]
+    }
+   ],
+   [
+    "gnss_integrity_loss",
+    {
+     "type": "dict",
+     "value": [
+      [
+       "nic_baro",
+       {
+        "type": "tuple",
+        "value": [
+         "Barometric altitude integrity",
+         "category"
+        ]
+       }
+      ],
+      [
+       "sil",
+       {
+        "type": "tuple",
+        "value": [
+         "Source integrity level",
+         "category"
+        ]
+       }
+      ],
+      [
+       "gva",
+       {
+        "type": "tuple",
+        "value": [
+         "Geometric vertical accuracy",
+         "category"
+        ]
+       }
+      ],
+      [
+       "sda",
+       {
+        "type": "tuple",
+        "value": [
+         "System design assurance",
+         "category"
+        ]
+       }
+      ],
+      [
+       "version",
+       {
+        "type": "tuple",
+        "value": [
+         "ADS-B version",
+         ""
+        ]
+       }
+      ]
+     ]
+    }
+   ],
+   [
+    "gnss_integrity_cluster",
+    {
+     "type": "dict",
+     "value": [
+      [
+       "nic_baro",
+       {
+        "type": "tuple",
+        "value": [
+         "Barometric altitude integrity",
+         "category"
+        ]
+       }
+      ],
+      [
+       "sil",
+       {
+        "type": "tuple",
+        "value": [
+         "Source integrity level",
+         "category"
+        ]
+       }
+      ],
+      [
+       "gva",
+       {
+        "type": "tuple",
+        "value": [
+         "Geometric vertical accuracy",
+         "category"
+        ]
+       }
+      ],
+      [
+       "sda",
+       {
+        "type": "tuple",
+        "value": [
+         "System design assurance",
+         "category"
+        ]
+       }
+      ],
+      [
+       "version",
+       {
+        "type": "tuple",
+        "value": [
+         "ADS-B version",
+         ""
+        ]
+       }
+      ]
+     ]
+    }
+   ],
+   [
+    "correlated_data_anomaly",
+    {
+     "type": "dict",
+     "value": [
+      [
+       "nic_baro",
+       {
+        "type": "tuple",
+        "value": [
+         "Barometric altitude integrity",
+         "category"
+        ]
+       }
+      ],
+      [
+       "sil",
+       {
+        "type": "tuple",
+        "value": [
+         "Source integrity level",
+         "category"
+        ]
+       }
+      ],
+      [
+       "gva",
+       {
+        "type": "tuple",
+        "value": [
+         "Geometric vertical accuracy",
+         "category"
+        ]
+       }
+      ],
+      [
+       "sda",
+       {
+        "type": "tuple",
+        "value": [
+         "System design assurance",
+         "category"
+        ]
+       }
+      ],
+      [
+       "version",
+       {
+        "type": "tuple",
+        "value": [
+         "ADS-B version",
+         ""
+        ]
+       }
+      ]
+     ]
+    }
+   ]
+  ]
+ },
+ "stories.PATTERN_KINDS": {
+  "type": "set",
+  "value": [
+   "altitude_oscillation",
+   "circling",
+   "confined_activity",
+   "course_reversal",
+   "departure_return",
+   "descending_spiral",
+   "extreme_turn_rate",
+   "formation_flight",
+   "holding_stack",
+   "hovering",
+   "loitering",
+   "parallel_passes",
+   "possible_go_around",
+   "prolonged_holding",
+   "repeated_passes",
+   "survey_grid",
+   "thermal_soaring"
+  ]
+ },
+ "stories.RATED_FIELDS": {
+  "type": "dict",
+  "value": [
+   [
+    "above_rated_altitude",
+    "alt_baro"
+   ],
+   [
+    "above_rated_speed",
+    "airspeed"
+   ]
+  ]
+ },
+ "stories.SPECIAL_KINDS": {
+  "type": "set",
+  "value": [
+   "archive_squawk_7400",
+   "archive_squawk_7500",
+   "archive_squawk_7600",
+   "archive_squawk_7700",
+   "special_squawk_7400",
+   "special_squawk_7500",
+   "special_squawk_7600",
+   "special_squawk_7700",
+   "special_squawk_downed",
+   "special_squawk_general",
+   "special_squawk_lifeguard",
+   "special_squawk_minfuel",
+   "special_squawk_nordo",
+   "special_squawk_unlawful"
+  ]
+ },
+ "stories.STORY_KINDS": {
+  "type": "set",
+  "value": [
+   "above_rated_altitude",
+   "above_rated_speed",
+   "altitude_gap",
+   "altitude_oscillation",
+   "archive_squawk_7400",
+   "archive_squawk_7500",
+   "archive_squawk_7600",
+   "archive_squawk_7700",
+   "circling",
+   "confined_activity",
+   "correlated_data_anomaly",
+   "course_reversal",
+   "database_watch",
+   "departure_return",
+   "descending_spiral",
+   "emitter_type_mismatch",
+   "extreme_turn_rate",
+   "fast",
+   "first_country_here",
+   "first_type_here",
+   "formation_flight",
+   "gnss_integrity_cluster",
+   "gnss_integrity_loss",
+   "high",
+   "holding_stack",
+   "hovering",
+   "identity_conflict",
+   "loitering",
+   "military",
+   "notable_variant",
+   "outlier_alt_baro",
+   "outlier_archive_alt",
+   "outlier_baro_rate",
+   "outlier_gs",
+   "parallel_passes",
+   "position_jump",
+   "possible_go_around",
+   "prolonged_holding",
+   "rapid_climb",
+   "rapid_descent",
+   "rare_here",
+   "repeated_passes",
+   "seasonal_speed_record",
+   "selected_altitude_overshoot",
+   "space_category",
+   "special_squawk_7400",
+   "special_squawk_7500",
+   "special_squawk_7600",
+   "special_squawk_7700",
+   "special_squawk_downed",
+   "special_squawk_general",
+   "special_squawk_lifeguard",
+   "special_squawk_minfuel",
+   "special_squawk_nordo",
+   "special_squawk_unlawful",
+   "special_use_code",
+   "stratospheric_balloon",
+   "survey_grid",
+   "tcas_ra",
+   "thermal_soaring",
+   "type_altitude_mismatch",
+   "type_speed_mismatch",
+   "unusual_emitter",
+   "vertical",
+   "vintage",
+   "watch_type",
+   "watchlist_match",
+   "wind_boost"
+  ]
+ },
+ "typecheck.REGISTRY_TYPE_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "type_altitude_mismatch",
+   "type_speed_mismatch"
+  ]
+ },
+ "typecheck.TYPE_DEPENDENT_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "above_rated_altitude",
+   "above_rated_speed",
+   "first_type_here",
+   "notable_variant",
+   "rare_here",
+   "seasonal_speed_record",
+   "type_altitude_mismatch",
+   "type_speed_mismatch",
+   "vintage",
+   "watch_type"
+  ]
+ },
+ "wind.GROUND_SPEED_KINDS": {
+  "type": "frozenset",
+  "value": [
+   "fast",
+   "seasonal_speed_record"
+  ]
+ }
+}
