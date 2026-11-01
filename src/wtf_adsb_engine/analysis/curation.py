@@ -1,0 +1,1158 @@
+"""Choose a small daily reading list without approving evidence or publishing it."""
+
+import re
+from bisect import bisect_left
+from collections import Counter, defaultdict
+from datetime import datetime, timezone
+
+from . import limits, reference
+from .maneuvers import HIGH_RATE_FPM, PRIORITY_STATUSES, STATUS_CODES, STATUS_NAMES, altitude_agrees
+from .rules import MIN_REPORT_SECONDS, MIN_REPORTS, RATED_KINDS, number, speed_plausible
+from .typecheck import TYPE_DEPENDENT_KINDS, type_check_state
+
+VERSION = 10
+MAX_PER_DAY = 9
+MIN_SCORE = 65
+IDENTITY_COOLDOWN = 30 * 86400
+TOPIC_COOLDOWN = 7 * 86400
+# Local type novelty. A watch type repeats at most every 14 days on any airframe.
+# A type seen on 40% of the last 60 coverage days gets one identity story per 30 days.
+TYPE_COOLDOWN = 14 * 86400
+ROUTINE_COOLDOWN = 30 * 86400
+ROUTINE_WINDOW = 60
+ROUTINE_DAYS = 24
+VARIANT_COOLDOWN = 7 * 86400
+# A data-conflict story, a tailwind speed record and a rated-limit exceedance
+# read alike on any aircraft, so each series takes one story per seven days.
+SERIES_COOLDOWN = 7 * 86400
+# Readings above a listed type's envelope: a wrong type or bad data, not performance.
+ENVELOPE_KINDS = frozenset({"type_speed_mismatch", "type_altitude_mismatch"})
+# A type's fastest sustained ground speed this season (selection imports this one set).
+RECORD_KINDS = frozenset({"seasonal_speed_record"})
+SERIES_KINDS = frozenset({"identity_conflict"}) | RECORD_KINDS | RATED_KINDS
+# Type-dependent kinds whose claim is a performance reading against the listed
+# type: they need a registry to corroborate the type. The identity kinds
+# publish when no registry lists the address, since the database is then the
+# only record, but never against a disagreeing one.
+PERFORMANCE_TYPE_KINDS = ENVELOPE_KINDS | RECORD_KINDS | RATED_KINDS
+# Selection and curation share one vintage story age.
+VINTAGE_YEARS = 80
+# Vintage airframes share one sub-topic per day, and an airframe with a vintage
+# story waits 90 days for another identity story.
+VINTAGE_COOLDOWN = 90 * 86400
+# Vintage interest adds a point per year beyond the story age (up to 12) and a
+# bonus for a type seen on at most N of the 60 coverage days before the story.
+# A story then needs seven points: an unseen type at 80 years, one seen on 1-2
+# days at 83, on 3-6 days at 85, and any type at 87. Calibrated to keep vintage
+# near a quarter of the history curation instead of over half.
+VINTAGE_AGE_POINTS = 12
+VINTAGE_RARITY = ((0, 7), (2, 4), (6, 2))
+# Later exceptional episodes of the same address and UTC date compete as ordinary ones.
+EXCEPTIONAL_PER_AIRCRAFT = 2
+# These observations can describe ordinary activity. They add
+# context to an independently interesting finding, never qualify a story alone.
+CONTEXT_KINDS = frozenset(
+    {
+        "circling",
+        "repeated_passes",
+        "parallel_passes",
+        "loitering",
+        "prolonged_holding",
+        "confined_activity",
+        "course_reversal",
+        "rapid_climb",
+        "altitude_oscillation",
+        "gnss_integrity_loss",
+        "emitter_type_mismatch",
+        "vfr_code_above_fl180",
+    }
+)
+# Glider VFR code: context for a soaring story, never a story alone.
+CONTEXT_CODES = frozenset({"1202"})
+SUSTAINED_FIELDS = (
+    "sustained_rate_fpm",
+    "sustained_duration_seconds",
+    "sustained_sample_count",
+    "sustained_altitude_change_ft",
+    "sustained_expected_altitude_change_ft",
+)
+IDENTITY_KINDS = {
+    "military",
+    "database_watch",
+    "watch_type",
+    "watchlist_match",
+    "vintage",
+    "unusual_emitter",
+    "rare_here",
+    "first_type_here",
+    "first_country_here",
+    "notable_variant",
+}
+DATA_QUALITY_KINDS = frozenset(
+    {
+        "position_jump",
+        "type_speed_mismatch",
+        "type_altitude_mismatch",
+        "space_category",
+        "altitude_gap",
+        "identity_conflict",
+        "emitter_type_mismatch",
+        "gnss_integrity_loss",
+        "gnss_integrity_cluster",
+        "correlated_data_anomaly",
+    }
+)
+# Orbit shapes whose interest falls to context near a runway.
+CIRCUIT_KINDS = frozenset(
+    {"circling", "prolonged_holding", "loitering", "confined_activity", "descending_spiral"}
+)
+AIRPORT_TAGS = frozenset({"runway_circuit_context", "airport_descent_context"})
+# A balloon episode explains these same-encounter readings.
+BALLOON_FOLDS = frozenset({"outlier_gs", "outlier_alt_baro", "outlier_archive_alt", "high"})
+# Status kinds by code or emergency field; priority declarations are not exceptions.
+STATUS_EXCEPTIONS = frozenset(
+    "special_squawk_" + status for status in STATUS_CODES | (STATUS_NAMES - PRIORITY_STATUSES)
+)
+BLOCKING_STATUS_TAGS = frozenset(
+    {"transient_code_selection", "status_field_disagreement", "ground_only_status"}
+)
+PERSISTENT_STATUS_SECONDS = 60
+PERSISTENT_STATUS_REPORTS = 4
+# End reasons that mean the reports stopped, not that the code was changed.
+STILL_SENDING = frozenset({"stale", "segment_break"})
+EXCEPTIONAL_DERIVED_FPM = 6000
+REPEATED_DESCENT_SECONDS = 6 * 3600
+SAME_DESCENT_SECONDS = 600
+EMERGENCY_PROFILE_FT = 25000
+JUMP_TYPES = frozenset(
+    {"DHC6", "C208", "BE9L", "BE99", "PC6T", "SC7", "L410", "AN2", "C182", "DHC2", "B190", "BE20"}
+)
+MAX_PARTICIPANTS = 12
+ADDRESS = re.compile(r"~?[0-9a-f]{6}")
+# Editorial weights, not probabilities or aircraft operating limits.
+INTEREST = {
+    "rapid_descent": 40,
+    "rapid_climb": 34,
+    "descending_spiral": 42,
+    "possible_go_around": 34,
+    "departure_return": 36,
+    "altitude_oscillation": 34,
+    "parallel_passes": 36,
+    "repeated_passes": 32,
+    "prolonged_holding": 30,
+    "hovering": 28,
+    "circling": 20,
+    "loitering": 16,
+    "course_reversal": 8,
+    "confined_activity": 4,
+    "watch_type": 32,
+    "watchlist_match": 34,
+    # Plus age and local type rarity; see vintage_interest().
+    "vintage": 18,
+    "rare_here": 30,
+    "military": 6,
+    "database_watch": 6,
+    "unusual_emitter": 18,
+    "fast": 28,
+    "high": 26,
+    "vertical": 30,
+    "wind_boost": 24,
+    "altitude_gap": 16,
+    "correlated_data_anomaly": 34,
+    "position_jump": 24,
+    "type_speed_mismatch": 26,
+    "type_altitude_mismatch": 26,
+    "space_category": 20,
+    "tcas_ra": 40,
+    "special_squawk_7400": 45,
+    "special_use_code": 30,
+    "stratospheric_balloon": 40,
+    "formation_flight": 36,
+    "holding_stack": 30,
+    "gnss_integrity_loss": 10,
+    "gnss_integrity_cluster": 32,
+    "survey_grid": 32,
+    "thermal_soaring": 22,
+    "selected_altitude_overshoot": 0,
+    "extreme_turn_rate": 0,
+    "identity_conflict": 24,
+    "first_type_here": 34,
+    "first_country_here": 26,
+    "notable_variant": 34,
+    "emitter_type_mismatch": 8,
+    "vfr_code_above_fl180": 8,
+    # A tailwind usually explains a record, so it ranks below most stories.
+    "seasonal_speed_record": 20,
+    # A sustained reading past a certified limit is rarer than a tailwind record.
+    "above_rated_altitude": 26,
+    "above_rated_speed": 24,
+}
+# One story ever per first-sighting kind and subtopic (type or allocation State).
+FIRST_KINDS = frozenset({"first_type_here", "first_country_here"})
+
+
+def topic(kind):
+    if kind in IDENTITY_KINDS:
+        return "aircraft"
+    if kind in CIRCUIT_KINDS:
+        return "circling"
+    if kind in {"parallel_passes", "repeated_passes", "survey_grid"}:
+        return "passes"
+    if kind in {
+        "rapid_descent",
+        "rapid_climb",
+        "vertical",
+        "altitude_oscillation",
+        "selected_altitude_overshoot",
+    }:
+        return "vertical-motion"
+    if kind.startswith(("special_squawk_", "archive_squawk_")) or kind in {
+        "special_use_code",
+        "vfr_code_above_fl180",
+    }:
+        return "transponder"
+    if kind.startswith("outlier_") or kind in DATA_QUALITY_KINDS:
+        return "data-quality"
+    if kind in {"fast", "high", "wind_boost", "seasonal_speed_record"} or kind in RATED_KINDS:
+        return "performance"
+    return kind
+
+
+def _measurement(metrics, key):
+    return number(metrics.get(key)) or 0
+
+
+def _mapping(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _strings(value):
+    return {item for item in value if isinstance(item, str)} if isinstance(value, list) else set()
+
+
+def utc_day(stamp):
+    """The UTC date of a timestamp, as YYYY-MM-DD."""
+    return datetime.fromtimestamp(stamp, timezone.utc).date().isoformat()
+
+
+def absorbed(event):
+    """A shape row a later circle or survey grid covers (the collector marks it)."""
+    return bool(_mapping(_mapping(event.get("evidence")).get("absorbed_by")))
+
+
+def context_tags(evidence):
+    """Non-blocking annotations from the top-level, episode and pattern blocks."""
+    evidence = _mapping(evidence)
+    tags = set()
+    for block in (evidence, evidence.get("maneuver"), evidence.get("pattern")):
+        tags |= _strings(_mapping(block).get("context_tags"))
+    return tags
+
+
+def _code(evidence):
+    code = _mapping(_mapping(evidence).get("maneuver")).get("code")
+    return code if isinstance(code, str) else None
+
+
+def context_only(kind, evidence=None):
+    # Legacy scalar values are absolute. Only a saved negative barometric rate
+    # establishes a descent; missing direction cannot bypass the climb policy.
+    evidence = _mapping(evidence)
+    rate = number(_mapping(evidence.get("aircraft")).get("baro_rate"))
+    return (
+        kind in CONTEXT_KINDS
+        or (kind == "vertical" and (rate is None or rate >= 0))
+        or (kind == "special_use_code" and _code(evidence) in CONTEXT_CODES)
+    )
+
+
+def report_count(event):
+    """(qualifying reports, seconds they span) from the confirmation window, else the row."""
+    evidence = _mapping(event.get("evidence"))
+    confirmation = _mapping(evidence.get("confirmation"))
+    samples = confirmation.get("samples")
+    reports = max(int(number(event.get("hits")) or 0), len(samples) if isinstance(samples, list) else 0)
+    span = number(confirmation.get("duration_seconds"))
+    if span is None:
+        first, last = number(event.get("first_seen")), number(event.get("last_seen"))
+        span = last - first if first is not None and last is not None else 0
+    return reports, max(0, span)
+
+
+def type_hold(event):
+    """Why a type-dependent finding is not yet a story candidate, as (rule, reason), or None.
+
+    A pending or failed second-source check holds selection until the worker's
+    next answer. The hold is not a review flag and never unpublishes a released
+    story: the publisher's next pass selects the finding once the check arrives.
+    A disagreeing check, or no registry record for a performance kind, is a
+    blocking gate instead (gates()).
+    """
+    kind = event["kind"]
+    if kind not in TYPE_DEPENDENT_KINDS:
+        return None
+    state = type_check_state(event.get("evidence"))
+    if state in {"pending", "failed"}:
+        return (
+            "type_check_pending",
+            "The second-source type check has not completed; selection waits for it"
+            + (
+                " (the registries could not be asked; retried after the backoff)" if state == "failed" else ""
+            ),
+        )
+    return None
+
+
+def gates(event):
+    """Blocking evidence rules for one finding, as (rule, reason) pairs.
+
+    type_disagrees: a second-source registry lists another type, so a
+    type-dependent premise is wrong (typecheck). type_uncorroborated: no
+    registry lists the address, and a performance claim against the listed type
+    needs corroboration. single_report: a spike, envelope, or rated finding with
+    fewer than rules.MIN_REPORTS qualifying reports or spanning less than
+    rules.MIN_REPORT_SECONDS (no one-report stories). rated_verdict: a rated-limit finding
+    publishes only with the verdict "exceeded"; pending, unknown, and within
+    readings stay private. rated_incomplete: an exceeded verdict whose reports over
+    the limit, or whose airspeed's origin, were not kept (limits.comparison), so
+    no story could state it. speed_implausible: a season record whose sustained
+    ground speed the current plausibility gate (rules.speed_plausible) refuses for
+    the listed type at its altitude; records saved under older rules, with a flat
+    wind allowance and no rated-limit check, are judged again here. A check still
+    pending is a selection hold that resolves on its own: see type_hold().
+    """
+    kind = event["kind"]
+    evidence = _mapping(event.get("evidence"))
+    found = []
+    if kind in TYPE_DEPENDENT_KINDS:
+        state = type_check_state(evidence)
+        check = _mapping(evidence.get("type_check"))
+        if state == "disagrees":
+            found.append(
+                (
+                    "type_disagrees",
+                    f"A second source lists a different type: {check.get('type_code')} ({check.get('source')})",
+                )
+            )
+        elif state == "unavailable" and kind in PERFORMANCE_TYPE_KINDS:
+            found.append(
+                (
+                    "type_uncorroborated",
+                    "No registry lists this address's type; a performance claim needs corroboration",
+                )
+            )
+    if kind.startswith("outlier_") or kind in ENVELOPE_KINDS or kind in RATED_KINDS:
+        reports, span = report_count(event)
+        if reports < MIN_REPORTS or span < MIN_REPORT_SECONDS:
+            found.append(
+                (
+                    "single_report",
+                    f"Only {reports} qualifying reports over {span:,.0f} s; a story needs at least "
+                    f"{MIN_REPORTS} reports spanning {MIN_REPORT_SECONDS} s",
+                )
+            )
+    if kind in RATED_KINDS:
+        verdict = _mapping(evidence.get("rated_limit")).get("verdict")
+        if verdict != "exceeded":
+            found.append(
+                (
+                    "rated_verdict",
+                    f"The rated-limit verdict is {verdict or 'missing'}; only an exceeded verdict can publish",
+                )
+            )
+        elif limits.comparison(kind, evidence) is None:
+            # The story states this comparison; without it no story can be written.
+            found.append(
+                (
+                    "rated_incomplete",
+                    "The reports over the certified limit, or how their airspeed was obtained, were not kept",
+                )
+            )
+    if kind in RECORD_KINDS and not speed_plausible(_mapping(evidence.get("aircraft")), event.get("value")):
+        found.append(
+            (
+                "speed_implausible",
+                "The sustained ground speed is beyond the listed type's envelope or certified limit "
+                "plus the wind allowance at its altitude: bad data or a wrong type, not a record",
+            )
+        )
+    return found
+
+
+def _derived_descent(metrics):
+    """The high-rate interval's own altitude change must also be steep."""
+    duration = number(metrics.get("sustained_duration_seconds"))
+    change = number(metrics.get("sustained_altitude_change_ft"))
+    if not duration or duration <= 0 or change is None or change * 60 / duration > -EXCEPTIONAL_DERIVED_FPM:
+        return False
+    # The detector's rate collapses repeated identical reports. A proof without
+    # it still carries the interval change and duration checked above.
+    reported = number(metrics.get("sustained_derived_rate_fpm"))
+    return reported is None or abs(reported) >= EXCEPTIONAL_DERIVED_FPM
+
+
+def exceptional(kind, value, metrics):
+    """An exception requires confirmed, coherent evidence, not an editorial flag.
+
+    The same rule checks raw episodes, public packets and their small proofs, so
+    a condition applies only when its field is present. Raw episodes always
+    carry the fields; the proof then carries their verified result.
+    """
+    if metrics.get("confirmed") is not True or metrics.get("quality_review_required") is not False:
+        return False
+    if metrics.get("quality_flags"):
+        return False
+    if kind in STATUS_EXCEPTIONS:
+        duration, samples = _measurement(metrics, "duration_seconds"), _measurement(metrics, "sample_count")
+        if duration < 8 or samples < 2 or _strings(metrics.get("context_tags")) & BLOCKING_STATUS_TAGS:
+            return False
+        if "state" not in metrics:
+            return True
+        reports = number(metrics.get("distinct_report_count"))
+        reports = samples if reports is None else reports
+        # Either a persistent status, or one still being sent when reports ended:
+        # an episode that ended only because reports stopped or its segment broke.
+        return (
+            (duration >= PERSISTENT_STATUS_SECONDS and reports >= PERSISTENT_STATUS_REPORTS)
+            or metrics.get("state") == "active"
+            or metrics.get("end_reason") in STILL_SENDING
+        )
+    rate = number(value)
+    sustained = _measurement(metrics, "sustained_rate_fpm")
+    duration = _measurement(metrics, "sustained_duration_seconds")
+    expected = number(metrics.get("sustained_expected_altitude_change_ft"))
+    return bool(
+        kind == "rapid_descent"
+        and rate is not None
+        and -12000 <= rate <= sustained <= -HIGH_RATE_FPM
+        and 30 <= duration <= _measurement(metrics, "duration_seconds")
+        and 4 <= _measurement(metrics, "sustained_sample_count") <= _measurement(metrics, "sample_count")
+        and expected is not None
+        # The detector rounds integrated altitude change to a tenth of a foot.
+        and rate * duration / 60 - 0.1 <= expected <= sustained * duration / 60 + 0.1
+        and altitude_agrees(
+            number(metrics.get("sustained_altitude_change_ft")),
+            expected,
+            -1,
+        )
+        and _derived_descent(metrics)
+    )
+
+
+def uncrewed(aircraft):
+    """Uncrewed metadata: emitter category B6 or the reference type class."""
+    aircraft = _mapping(aircraft)
+    return aircraft.get("category") == "B6" or reference.type_class(aircraft.get("t")) == "uav"
+
+
+def _start(event):
+    start = number(_mapping(_mapping(event.get("evidence")).get("maneuver")).get("started_at"))
+    return number(event.get("first_seen")) if start is None else start
+
+
+def descent_starts(groups):
+    """Every saved descent episode per address, including uncertain ones."""
+    starts = defaultdict(list)
+    for group in groups:
+        for event in group["events"]:
+            if event.get("kind") == "rapid_descent" and (start := _start(event)) is not None:
+                starts[event["hex"]].append(start)
+    return {address: sorted(times) for address, times in starts.items()}
+
+
+def repeated_descent(event, descents):
+    """Another descent cycle by the same address within six hours, such as a jump plane."""
+    start = _start(event)
+    return start is not None and any(
+        SAME_DESCENT_SECONDS <= abs(other - start) <= REPEATED_DESCENT_SECONDS
+        for other in (descents or {}).get(event.get("hex"), ())
+    )
+
+
+def exceptional_event(event, descents=None):
+    """Exceptional status of one saved finding, before the per-aircraft daily cap."""
+    kind = event["kind"]
+    evidence = _mapping(event.get("evidence"))
+    metrics = _mapping(evidence.get("maneuver"))
+    if not exceptional(kind, event.get("value"), metrics):
+        return False
+    aircraft = _mapping(evidence.get("aircraft"))
+    if kind == "special_squawk_7400":
+        # A crewed aircraft's lost-link code is exceptional only when it moved to an emergency code.
+        sequence = metrics.get("code_sequence")
+        codes = {_mapping(item).get("code") for item in sequence} if isinstance(sequence, list) else set()
+        return uncrewed(aircraft) or bool(codes & {"7500", "7600", "7700"})
+    if kind != "rapid_descent":
+        return True
+    tags = context_tags(evidence)
+    if aircraft.get("t") in JUMP_TYPES and "airport_descent_context" in tags:
+        return False
+    start = number(metrics.get("start_altitude_ft"))
+    emergency = "emergency_descent_profile" in tags and (start is None or start >= EMERGENCY_PROFILE_FT)
+    return emergency or not repeated_descent(event, descents)
+
+
+def priority_evidence(kind, value, metrics):
+    """The small public evidence record needed to validate a daily-limit exception."""
+    if not exceptional(kind, value, metrics):
+        return None
+    proof = {
+        "confirmed": True,
+        "quality_review_required": False,
+        "duration_seconds": metrics["duration_seconds"],
+        "sample_count": metrics["sample_count"],
+        "value": number(value),
+    }
+    if kind == "rapid_descent":
+        proof.update({key: metrics[key] for key in SUSTAINED_FIELDS})
+    return proof
+
+
+def participants(event):
+    """Other aircraft addresses named by a multi-aircraft finding."""
+    evidence = _mapping(event.get("evidence"))
+    found = set()
+    for block in (evidence, evidence.get("maneuver")):
+        items = _mapping(block).get("participants")
+        for item in items if isinstance(items, list) else ():
+            address = _mapping(item).get("hex")
+            if isinstance(address, str) and ADDRESS.fullmatch(address.lower()):
+                found.add(address.lower())
+    found.discard(str(event.get("hex", "")).lower())
+    return sorted(found)[:MAX_PARTICIPANTS]
+
+
+def facts(event):
+    """Repeat-policy facts: addresses, type, variant, the identity sub-topic and the story series."""
+    evidence = _mapping(event.get("evidence"))
+    aircraft = _mapping(evidence.get("aircraft"))
+    kind = event["kind"]
+    typecode = aircraft.get("t") if isinstance(aircraft.get("t"), str) and aircraft.get("t") else None
+    variant = None
+    if kind == "notable_variant":
+        # One label covers several database descriptions of the same variant.
+        raw = evidence.get("variant")
+        raw = (_mapping(raw).get("label") or _mapping(raw).get("name")) if isinstance(raw, dict) else raw
+        variant = raw if isinstance(raw, str) and raw else aircraft.get("desc")
+        variant = variant if isinstance(variant, str) and variant else None
+    country = None
+    if kind == "first_country_here":
+        raw = (
+            _mapping(evidence.get("first_sighting")).get("country")
+            or evidence.get("country")
+            or _mapping(evidence.get("identity_checks")).get("allocation_country")
+        )
+        country = raw if isinstance(raw, str) and raw else None
+    address = str(event.get("hex", "")).lower()
+    subtopic = None
+    if kind == "vintage":
+        # Old airframes of different types still read as one kind of story.
+        subtopic = "vintage"
+    elif kind in IDENTITY_KINDS:
+        subtopic = (
+            "variant:" + variant
+            if variant
+            else "country:" + country
+            if country
+            else "type:" + typecode
+            if typecode
+            else "aircraft:" + address
+        )
+    series = kind if kind in SERIES_KINDS else None
+    return {
+        "addresses": sorted({address, *participants(event)}),
+        "type": typecode,
+        "variant": variant,
+        "subtopic": subtopic,
+        "series": series,
+    }
+
+
+def story_key(event, episode):
+    """One phenomenon is one story, whichever participant's encounter holds it."""
+    others = participants(event)
+    if not others:
+        return episode
+    start = _start(event)
+    return f"{event['kind']}:{'+'.join(sorted({str(event['hex']).lower(), *others}))}:{start:.6f}"
+
+
+def type_day_counts(presence, day):
+    """Distinct coverage days per type within the 60 coverage days before `day`."""
+    coverage = presence.get("coverage", [])
+    end = bisect_left(coverage, day)
+    window = set(coverage[max(0, end - ROUTINE_WINDOW) : end])
+    counts = {}
+    for typecode, days in presence.get("types", {}).items():
+        if seen := len(window.intersection(days)):
+            counts[typecode] = seen
+    return {"coverage_days": len(window), "type_days": counts}
+
+
+def routine_types(counts):
+    """Locally routine types from precomputed type-day counts."""
+    return frozenset(
+        typecode
+        for typecode, days in _mapping(_mapping(counts).get("type_days")).items()
+        if days >= ROUTINE_DAYS
+    )
+
+
+def _identity_pair(row, other, routine):
+    return (row["kind"] in IDENTITY_KINDS and other["kind"] in IDENTITY_KINDS) or (
+        row["kind"] == other["kind"] == "identity_conflict"
+    )
+
+
+def _vintage_pair(row, other, routine):
+    return other["kind"] in IDENTITY_KINDS and "vintage" in (row["kind"], other["kind"])
+
+
+def _routine_pair(row, other, routine):
+    # A type routine on either story's own date holds both, so earlier and later
+    # stories agree whichever is checked first.
+    return other["kind"] in IDENTITY_KINDS and (row["type"] in routine or other.get("routine_type"))
+
+
+# The repeat policy, checked in order: (reason, index, row kinds it applies to (None
+# for all), whether another story matches, and the window in seconds (None: any time)).
+REPEAT_RULES = (
+    ("same_aircraft_day", "address", None, lambda row, other, routine: other["day"] == row["day"], None),
+    ("identity_repeat", "address", None, _identity_pair, IDENTITY_COOLDOWN),
+    ("vintage_repeat", "address", IDENTITY_KINDS, _vintage_pair, VINTAGE_COOLDOWN),
+    ("routine_type", "type", IDENTITY_KINDS, _routine_pair, ROUTINE_COOLDOWN),
+    (
+        "type_repeat",
+        "type",
+        {"watch_type"},
+        lambda row, other, routine: other["kind"] == "watch_type",
+        TYPE_COOLDOWN,
+    ),
+    (
+        "variant_repeat",
+        "variant",
+        {"notable_variant"},
+        lambda row, other, routine: other["kind"] == "notable_variant",
+        VARIANT_COOLDOWN,
+    ),
+    # A second "first" of one type or allocation State would be false.
+    ("first_repeat", "subtopic", FIRST_KINDS, lambda row, other, routine: other["kind"] == row["kind"], None),
+    ("series_repeat", "series", None, lambda row, other, routine: True, SERIES_COOLDOWN),
+)
+
+
+def _days(seconds):
+    return f"{seconds // 86400} days"
+
+
+REPEAT_REASONS = {
+    "same_aircraft_day": "This aircraft already has a story on this UTC date",
+    "identity_repeat": f"This aircraft had an identity story within {_days(IDENTITY_COOLDOWN)}",
+    "type_repeat": f"This aircraft type had a type-match story within {_days(TYPE_COOLDOWN)}",
+    "routine_type": f"This locally routine type had an identity story within {_days(ROUTINE_COOLDOWN)}",
+    "variant_repeat": f"This aircraft variant had a story within {_days(VARIANT_COOLDOWN)}",
+    "vintage_repeat": f"This vintage airframe had an identity story within {_days(VINTAGE_COOLDOWN)}",
+    "first_repeat": "A first sighting of this type or allocation State already had its story",
+    "series_repeat": f"A story that reads the same way on any aircraft ran within {_days(SERIES_COOLDOWN)}",
+}
+
+
+# Single-valued repeat-policy facts that StoryLog indexes beside the addresses.
+FACT_INDEXES = ("type", "variant", "subtopic", "series")
+
+
+class StoryLog:
+    """Prior stories for the shared repeat policy, at exact episode-start times."""
+
+    def __init__(self, entries=()):
+        self.indexes = {name: defaultdict(list) for name in ("address", *FACT_INDEXES)}
+        for entry in entries:
+            self.add(entry)
+
+    @property
+    def by_address(self):
+        return self.indexes["address"]
+
+    def add(self, entry):
+        # An in-place withdrawal retracts the story; it never holds later candidates.
+        if entry.get("withdrawn"):
+            return
+        for name, keys in self._keys(entry).items():
+            for key in keys:
+                self.indexes[name][key].append(entry)
+
+    @staticmethod
+    def _keys(entry):
+        return {
+            "address": entry["addresses"],
+            **{name: [entry[name]] if entry.get(name) else [] for name in FACT_INDEXES},
+        }
+
+    def repeat(self, row, routine=frozenset()):
+        """Why an ordinary candidate repeats an earlier or later story, or None."""
+        keys = self._keys(row)
+        for reason, index, kinds, matches, window in REPEAT_RULES:
+            if kinds is not None and row["kind"] not in kinds:
+                continue
+            for key in keys[index]:
+                for other in self.indexes[index].get(key, ()):
+                    if (
+                        (other.get("id") is None or other["id"] != row.get("id"))
+                        and (window is None or abs(row["start"] - other["start"]) < window)
+                        and matches(row, other, routine)
+                    ):
+                        return reason
+        return None
+
+    def novelty(self, row):
+        """Zero for the same aircraft and topic within seven days; eight for another topic."""
+        score = 15
+        for address in row["addresses"]:
+            for other in self.by_address.get(address, ()):
+                if other.get("group_key") is not None and other.get("group_key") == row.get("episode_key"):
+                    continue
+                if abs(row["start"] - other["start"]) < TOPIC_COOLDOWN:
+                    if topic(other["kind"]) == topic(row["kind"]):
+                        return 0
+                    score = 8
+        return score
+
+
+def vintage_interest(age, type_days=None):
+    """Rank vintage airframes by age and by how rarely their type is seen here.
+
+    `type_days` counts the type's days among the last 60 coverage days; None
+    means no local counts, which never lowers the rank.
+    """
+    if age is None or age < VINTAGE_YEARS:
+        return INTEREST["vintage"]
+    points = min(VINTAGE_AGE_POINTS, int(age) - VINTAGE_YEARS)
+    rarity = next((bonus for days, bonus in VINTAGE_RARITY if type_days is None or type_days <= days), 0)
+    return INTEREST["vintage"] + points + rarity
+
+
+def rate(event, *, descents=None, rarity=None):
+    """Score one finding using its existing factual and editorial assessment.
+
+    `rarity` is the type's recent coverage-day count, used to rank vintage airframes.
+    """
+    evidence, decision = event["evidence"], event["selection"]
+    kind = event["kind"]
+    maneuver = evidence.get("maneuver") or {}
+    pattern = evidence.get("pattern") or {}
+    metrics = maneuver or pattern
+    confirmed = maneuver.get("confirmed") is True if maneuver else pattern.get("shape_verified") is True
+    flags = _strings(metrics.get("quality_flags")) | _strings(evidence.get("quality_flags"))
+    tags = context_tags(evidence)
+    # Archives can nominate an exceptional review candidate without pretending
+    # that repeated labels or unknown field freshness confirm an aircraft event.
+    coherent = (
+        confirmed
+        and not (flags - {"archive_field_freshness_unknown"})
+        and (metrics.get("quality_review_required") is False or flags == {"archive_field_freshness_unknown"})
+    )
+    loops = _measurement(metrics, "closed_loops")
+    passes = _measurement(metrics, "complete_passes")
+    duration = _measurement(metrics, "duration_seconds")
+    interest = INTEREST.get(kind, 28 if kind.startswith("outlier_") else 0)
+    if coherent and kind in {"rapid_descent", "rapid_climb"}:
+        interest += min(5, int(max(0, abs(number(event.get("value")) or 0) - 4500) / 1500))
+    if kind == "rapid_descent" and "emergency_descent_profile" in tags:
+        interest += 5
+    if kind.startswith(("special_squawk_", "archive_squawk_")):
+        interest = 45
+    elif kind == "special_use_code" and _code(evidence) in CONTEXT_CODES:
+        interest = 8
+    if (kind.startswith(("special_squawk_", "archive_squawk_")) or kind == "special_use_code") and (
+        tags & BLOCKING_STATUS_TAGS
+    ):
+        # A transient, ground-only or contradicted code does not lead the day.
+        interest = 8
+    elif kind == "vintage":
+        interest = vintage_interest(number(event.get("value")), rarity)
+    elif topic(kind) in {"circling", "passes"}:
+        interest += min(12, max(0, int(max(loops, passes) - 3) * 2))
+    if kind in CIRCUIT_KINDS and (evidence.get("airport_context") or tags & AIRPORT_TAGS):
+        interest = min(interest, 8)
+    if event.get("verdict") == "keep":
+        interest = max(40, interest)
+    interest = min(45, interest)
+    exceptional_candidate = coherent and (
+        kind in STATUS_EXCEPTIONS
+        or (
+            kind in {"rapid_descent", "rapid_climb"}
+            and abs(number(event.get("value")) or 0) >= 7000
+            and duration >= 30
+            and _measurement(metrics, "sample_count") >= 4
+        )
+    )
+    # assess() evaluated the type-check hold with the gates.
+    hold = decision.get("publication_hold")
+    eligible = bool(decision["story_eligible"]) and hold is None
+    evidence_points = (20 if kind in IDENTITY_KINDS else 30) if eligible else 10
+    if decision["review_required"]:
+        evidence_points = min(evidence_points, 10)
+    depth = (
+        10
+        if (
+            (confirmed and duration >= 30 and _measurement(metrics, "sample_count") >= 4)
+            or (kind.startswith("outlier_") and eligible and not decision["review_required"])
+        )
+        else 5
+        if evidence.get("aircraft", {}).get("t")
+        else 0
+    )
+    return {
+        "finding_id": event["id"],
+        "kind": kind,
+        "topic": topic(kind),
+        "interest": interest,
+        "evidence": evidence_points,
+        "depth": depth,
+        "eligible": eligible,
+        "exceptional": bool(
+            eligible and not decision["review_required"] and exceptional_event(event, descents)
+        ),
+        "priority_review": bool(
+            not eligible
+            and not context_only(kind, evidence)
+            and event.get("verdict") not in {"routine", "bad_data"}
+            and coherent
+            and (exceptional_candidate or interest >= 34)
+        ),
+        "quality_flags": sorted(flags),
+        "context_only": context_only(kind, evidence),
+        "hold": hold,
+        "reasons": list(decision["reasons"]),
+        **facts(event),
+    }
+
+
+def _order(candidate):
+    rarity = candidate.get("rarity")
+    return (
+        -candidate["exceptional"],
+        -candidate.get("pinned", False),
+        -candidate.get("adjusted_score", candidate["score"]),
+        -candidate["interest"],
+        -candidate["evidence"],
+        # Ties go to the locally rarer type.
+        float("inf") if rarity is None else rarity,
+        candidate["first_seen"],
+        candidate["episode_key"],
+        str(candidate["finding_id"]),
+    )
+
+
+def _penalty_key(row):
+    # Distinct aircraft types or variants do not compete for one identity slot.
+    return row["subtopic"] if row["kind"] in IDENTITY_KINDS and row.get("subtopic") else topic(row["kind"])
+
+
+def episode_key(group):
+    """Use the collector's encounter boundary even when early rows expire."""
+    start = group.get("start")
+    if start is None:
+        start = group["first_seen"]
+    return str(group.get("id") or f"{group['events'][0]['hex']}:{start:.6f}")
+
+
+def _novelty(novelty, day):
+    return novelty(day) if novelty else None
+
+
+def _rarity(group):
+    """First sightings and private rarity leads; a lower count is rarer."""
+    if any(event["kind"] == "first_type_here" for event in group["events"]):
+        return 0
+    counts = [
+        number(_mapping(_mapping(event.get("evidence")).get("rarity")).get("type_days"))
+        for event in group["events"]
+        if event["kind"] == "rare_here"
+    ]
+    counts = [value for value in counts if value is not None]
+    return min(counts) if counts else None
+
+
+def story_entry(row):
+    """A selected row as a prior story for later repeat checks."""
+    return {
+        "id": None,
+        "episode_key": row["story_key"],
+        "addresses": list(row["addresses"]),
+        "kind": row["kind"],
+        "start": row["start"],
+        "day": row["day"],
+        "type": row["type"],
+        "variant": row["variant"],
+        "subtopic": row["subtopic"],
+        "series": row["series"],
+        "exceptional": row["exceptional"],
+        "routine_type": row["routine_type"],
+        "live": True,
+    }
+
+
+def _score(row):
+    return row["interest"] + row["evidence"] + row["depth"] + row["novelty"]
+
+
+def _adjust(row, topics):
+    """The diversity penalty: eight points per earlier story of this topic that day."""
+    row["diversity_penalty"] = 0 if row["exceptional"] or row["pinned"] else 8 * topics[_penalty_key(row)]
+    row["adjusted_score"] = row["score"] - row["diversity_penalty"]
+
+
+def _rate_group(key, day, first, group, *, counts, routine, descents, removed, pinned):
+    """Rated rows for every finding of one observation episode."""
+    events = group["events"]
+    type_days = _mapping(_mapping(counts).get("type_days"))
+    # Collection passes only eligible findings; it flags a balloon under review.
+    folded = group.get("balloon") or any(event["kind"] == "stratospheric_balloon" for event in events)
+    rarity = _rarity(group)
+    common = {
+        "episode_key": key,
+        "day": day,
+        "first_seen": first,
+        "start": first,
+        "last_seen": group["last_seen"],
+        "hex": events[0]["hex"],
+    }
+    rated = []
+    for event in events:
+        typecode = facts(event)["type"]
+        type_rarity = rarity if rarity == 0 or counts is None or not typecode else type_days.get(typecode, 0)
+        row = {**common, **rate(event, descents=descents, rarity=type_rarity)}
+        source = (event["hex"], event["kind"], event["first_seen"])
+        row["owner_removed"] = source in removed
+        row["pinned"] = source in pinned.get(key, {})
+        if (
+            row["pinned"]
+            and pinned[key][source]
+            and row["eligible"]
+            and not event["selection"]["review_required"]
+            and exceptional_event(event)
+        ):
+            # A published exception keeps its standing while its own evidence holds.
+            row["exceptional"] = True
+        row["story_key"] = story_key(event, key)
+        row["routine_type"] = bool(row["type"] in routine and row["kind"] in IDENTITY_KINDS)
+        row["rarity"] = type_rarity
+        if folded and row["kind"] in BALLOON_FOLDS:
+            row["context_only"] = True
+            row["reasons"].append("Part of the balloon episode; not a separate story")
+        row["novelty"] = 15
+        row["score"] = _score(row)
+        rated.append(row)
+    return rated
+
+
+def _available(row, log, routine):
+    """Give the row its disposition; whether it can still be selected."""
+    row.update(novelty=15, diversity_penalty=0)
+    if row["owner_removed"]:
+        row["disposition"] = "owner_removed"
+        row["reasons"].append("The owner removed the story about this finding")
+    elif row["context_only"]:
+        row["disposition"] = "context_only"
+        row["reasons"].append(
+            "This observation needs another independently qualifying finding in this episode"
+        )
+    elif row.get("hold"):
+        # Waits for the second-source type check; the next pass selects it unattended.
+        row["disposition"] = row["hold"]
+    elif not row["eligible"]:
+        row["disposition"] = "needs_review" if row["priority_review"] else "not_story_eligible"
+    elif not row["exceptional"] and not row["pinned"] and (reason := log.repeat(row, routine)):
+        row["disposition"] = reason
+        row["reasons"].append(REPEAT_REASONS[reason])
+    else:
+        row["disposition"] = "below_threshold"
+        row["ordinary_novelty"] = log.novelty(row)
+        if not row["exceptional"]:
+            row["novelty"] = row["ordinary_novelty"]
+        row["score"] = _score(row)
+        return True
+    return False
+
+
+def _select_day(available, day_held, log, routine, selected):
+    """Pick one UTC date's stories from its available rows, in rank order."""
+    topics = Counter(_penalty_key(entry) for entry in day_held)
+    aircraft = {address for entry in day_held for address in entry["addresses"]}
+    exceptions = Counter(
+        address for entry in day_held if entry.get("exceptional") for address in entry["addresses"]
+    )
+    slots = len(day_held)
+    while available:
+        for row in available:
+            if (
+                row["exceptional"]
+                and not row["pinned"]
+                and any(exceptions[address] >= EXCEPTIONAL_PER_AIRCRAFT for address in row["addresses"])
+            ):
+                row["exceptional"] = False
+                row["novelty"] = row["ordinary_novelty"]
+                row["score"] = _score(row)
+                row["reasons"].append("Two exceptional stories already cover this aircraft and date")
+            _adjust(row, topics)
+        choices = [
+            row
+            for row in available
+            if row["pinned"]
+            or row["exceptional"]
+            or (
+                not aircraft.intersection(row["addresses"])
+                and row["adjusted_score"] >= MIN_SCORE
+                and slots < MAX_PER_DAY
+                and not log.repeat(row, routine)
+            )
+        ]
+        if not choices:
+            break
+        winner = min(choices, key=_order)
+        available.remove(winner)
+        winner.update(disposition="selected", rank=1 + slots)
+        selected.append(winner)
+        remaining = []
+        for other in available:
+            if other["episode_key"] == winner["episode_key"] or other["story_key"] == winner["story_key"]:
+                other["disposition"] = "same_episode"
+            else:
+                remaining.append(other)
+        available = remaining
+        topics[_penalty_key(winner)] += 1
+        slots += 1
+        aircraft.update(winner["addresses"])
+        if winner["exceptional"]:
+            exceptions.update(winner["addresses"])
+        log.add(story_entry(winner))
+    for row in available:
+        _adjust(row, topics)
+        reason = None if row["exceptional"] or row["pinned"] else log.repeat(row, routine)
+        if reason:
+            row["disposition"] = reason
+            row["reasons"].append(REPEAT_REASONS[reason])
+        elif aircraft.intersection(row["addresses"]):
+            row["disposition"] = "same_aircraft_day"
+        else:
+            row["disposition"] = "daily_limit" if row["adjusted_score"] >= MIN_SCORE else "below_threshold"
+
+
+def choose(groups, *, audit=True, history=(), novelty=None, descents=None):
+    """Rank complete observation days, with explanatory decisions for each finding.
+
+    Callers supply existing per-finding selection decisions. No input is mutated.
+    `history` holds prior stories from the publication ledger (see autopilot), so
+    a held repeat never takes a slot; a live story's own finding keeps its slot.
+    `novelty` is a function of the UTC date returning its type-day counts.
+    Exceptional findings bypass repetition/diversity penalties, never the evidence
+    checks, and at most two per address and UTC date stay exceptional. The daily
+    target limits ordinary selections; exceptional episodes can take it above nine.
+    A shape row a circle or survey grid absorbed never competes.
+    """
+    days = defaultdict(list)
+    priority_review = []
+    seen = set()
+    for group in groups:
+        events = [event for event in group["events"] if not absorbed(event)]
+        if not events:
+            continue
+        first = number(group["first_seen"])
+        if first is None:
+            raise ValueError("An observation start is required")
+        key = episode_key(group)
+        if key in seen:
+            raise ValueError("Duplicate observation episode")
+        seen.add(key)
+        days[utc_day(first)].append((key, first, {**group, "events": events}))
+    descents = descent_starts(groups) if descents is None else descents
+    group_days = {key: day for day, items in days.items() for key, _, _ in items}
+    log, held, pinned = StoryLog(), defaultdict(list), defaultdict(dict)
+    pinned_entries = defaultdict(list)
+    # The owner removed or withdrew these stories; their own findings never return as stories.
+    removed = {
+        tuple(entry["source"])
+        for entry in history
+        if (entry.get("removed") or entry.get("withdrawn")) and entry.get("source")
+    }
+    for entry in history:
+        if "routine_type" not in entry and entry.get("kind") in IDENTITY_KINDS and entry.get("type"):
+            # A prior story without its saved flag gets the routine status of its own date.
+            entry = {**entry, "routine_type": entry["type"] in routine_types(_novelty(novelty, entry["day"]))}
+        # Every prior story constrains repeats on earlier and later days alike.
+        log.add(entry)
+        if not entry.get("live"):
+            continue
+        if entry.get("group_key") in group_days and entry.get("source"):
+            # A live story's own finding keeps its slot and primary reason; only an
+            # exceptional finding in the same encounter can replace it.
+            pinned[entry["group_key"]][tuple(entry["source"])] = bool(entry.get("exceptional"))
+            pinned_entries[group_days[entry["group_key"]]].append(entry)
+        else:
+            held[entry["day"]].append(entry)
+
+    decisions, selected = [], []
+    for day, episode_groups in sorted(days.items()):
+        counts = _novelty(novelty, day)
+        routine = routine_types(counts)
+        candidates = []
+        for key, first, group in episode_groups:
+            rated = _rate_group(
+                key,
+                day,
+                first,
+                group,
+                counts=counts,
+                routine=routine,
+                descents=descents,
+                removed=removed,
+                pinned=pinned,
+            )
+            if audit:
+                review = [row for row in rated if row["priority_review"]]
+                if review:
+                    priority_review.append(min(review, key=_order))
+            candidates.extend(rated)
+        available = []
+        for row in candidates:
+            if _available(row, log, routine):
+                available.append(row)
+            if audit:
+                decisions.append(row)
+        # A live story whose own finding is unavailable here still holds its slot.
+        live_rows = {row["episode_key"] for row in available if row["pinned"]}
+        day_held = held[day] + [entry for entry in pinned_entries[day] if entry["group_key"] not in live_rows]
+        _select_day(available, day_held, log, routine, selected)
+    return {
+        "version": VERSION,
+        "max_per_day": MAX_PER_DAY,
+        "minimum_score": MIN_SCORE,
+        "weights": {"interest": 45, "evidence": 30, "novelty": 15, "depth": 10},
+        "selected": selected,
+        "decisions": sorted(
+            decisions, key=lambda row: (row["day"], row["episode_key"], str(row["finding_id"]))
+        ),
+        "priority_review": sorted(priority_review, key=_order),
+    }
+
+
+class DailyLimitError(ValueError):
+    """A proposed publication exceeds the user's daily event limit."""
+
+
+def validate_daily_limit(events):
+    """At most nine ordinary events per UTC date; supported exceptions survive."""
+    if any(
+        count > MAX_PER_DAY
+        for count in Counter(
+            event["observed_start"][:10]
+            for event in events
+            if not exceptional(
+                event.get("kind"),
+                event.get("priority_evidence", {}).get("value"),
+                event.get("priority_evidence", {}),
+            )
+        ).values()
+    ):
+        raise DailyLimitError("Publication exceeds nine ordinary events on one UTC observation date")

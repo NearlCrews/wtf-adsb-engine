@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101419" />
+    <title>WTF ADS-B Engine</title>
+    <link rel="icon" href="/wtf/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/wtf/style.css" />
+    <script src="/wtf/app.js" defer></script>
+  </head>
+  <body>
+    <div class="top-line"></div>
+    <header class="nav shell">
+      <a class="brand" href="/wtf/" aria-label="WTF Radar home"
+        ><span class="radar-mark" aria-hidden="true">⌖</span
+        ><strong>WTF<span>RADAR</span></strong></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="/wtf/">Live journal</a
+        ><a href="/wtf/archive/">Saved writing archive</a
+        ><button type="button" id="how-button">
+          How it works <span>?</span>
+        </button>
+      </nav>
+      <div class="status" id="status"><i></i><span>Connecting</span></div>
+    </header>
+    <main class="shell">
+      <p id="archive-label" role="status">Private factual journal</p>
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="tiny-line"></span> ADS-B / DISCOVERY JOURNAL
+          </div>
+          <h1>Something’s <em>up.</em></h1>
+          <p class="intro">
+            Unusual aircraft. Strange numbers.<br />Receipts included.
+          </p>
+          <p class="hero-note">
+            The interesting bits hiding in your ADS-B data,<br />automatically
+            collected and explained.
+          </p>
+        </div>
+        <article
+          class="spotlight"
+          id="spotlight"
+          aria-label="Featured sighting"
+        >
+          <div class="eyebrow">LISTENING FOR THE UNUSUAL</div>
+          <h2>Your sky has stories.</h2>
+          <p>The journal is connecting to your receiver.</p>
+        </article>
+      </section>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <section class="stat-strip" aria-label="Discovery summary">
+        <div>
+          <span class="stat-label">Recorded flags / last 24h</span
+          ><strong id="stat-finds">—</strong><small>Saved sightings</small>
+        </div>
+        <div>
+          <span class="stat-label">Special airframes / 24h</span
+          ><strong id="stat-airframes">—</strong
+          ><small>Database &amp; watchlist matches</small>
+        </div>
+        <div>
+          <span class="stat-label">Odd data / 24h</span
+          ><strong id="stat-oddities">—</strong
+          ><small>Numbers worth a closer look</small>
+        </div>
+        <div>
+          <span class="stat-label">Unique IDs logged</span
+          ><strong id="stat-unique">—</strong
+          ><small>Including imported history</small>
+        </div>
+      </section>
+      <div class="content-grid">
+        <section class="journal" aria-labelledby="journal-title">
+          <div class="section-heading">
+            <div>
+              <div class="eyebrow">THE GOOD STUFF</div>
+              <h2 id="journal-title">
+                The sighting feed<span class="dot">.</span>
+              </h2>
+            </div>
+            <a id="export" class="export" href="/wtf/api/export.csv"
+              >↓ Export CSV</a
+            >
+          </div>
+          <div class="controls">
+            <label class="search"
+              ><span aria-hidden="true">⌕</span
+              ><input
+                id="search"
+                type="search"
+                placeholder="Callsign, tail, aircraft type…"
+                aria-label="Search sightings"
+            /></label>
+            <label class="sr-only" for="period">Time period</label
+            ><select id="period">
+              <option value="1">Last 24 hours</option>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="365" selected>All saved history</option>
+            </select>
+            <label class="sr-only" for="sort">Sort sightings</label
+            ><select id="sort">
+              <option value="wow">Most interesting</option>
+              <option value="recent">Most recent</option>
+            </select>
+            <label class="sr-only" for="view">Show findings</label>
+            <select id="view">
+              <option value="promoted">Highlights</option>
+              <option value="review">Needs review</option>
+              <option value="encounters">All encounters</option>
+              <option value="all">All observations</option>
+              <option value="drafts">Story drafts</option>
+            </select>
+          </div>
+          <div class="filters" role="group" aria-label="Sighting categories">
+            <button
+              type="button"
+              data-category=""
+              class="active"
+              aria-pressed="true"
+            >
+              Everything</button
+            ><button
+              type="button"
+              data-category="airframes"
+              aria-pressed="false"
+            >
+              Airframes</button
+            ><button
+              type="button"
+              data-category="performance"
+              aria-pressed="false"
+            >
+              Big numbers</button
+            ><button
+              type="button"
+              data-category="patterns"
+              aria-pressed="false"
+            >
+              Patterns</button
+            ><button
+              type="button"
+              data-category="oddities"
+              aria-pressed="false"
+            >
+              Odd data</button
+            ><button type="button" data-category="signals" aria-pressed="false">
+              Signals
+            </button>
+          </div>
+          <div
+            id="result-caption"
+            class="result-caption"
+            aria-live="polite"
+          ></div>
+          <div id="events" class="events">
+            <div class="empty">
+              <span class="empty-icon">⌖</span>
+              <h3>Checking the sky…</h3>
+              <p>Loading real sightings from your receiver.</p>
+            </div>
+          </div>
+        </section>
+        <aside>
+          <section class="side-card analyst-card">
+            <div class="eyebrow">THE WHY, EXPLAINED</div>
+            <h2>Your field notebook</h2>
+            <p id="ai-status" class="side-intro">
+              Loading saved evidence.
+            </p>
+            <p id="ai-next" class="muted">Loading journal status.</p>
+            <p id="archive-context" class="footnote">
+              Searching existing receiver history.
+            </p>
+          </section>
+          <section class="side-card">
+            <h2>FlightAware context</h2>
+            <p id="flightaware-status" class="side-intro">
+              Loading flight context status.
+            </p>
+            <p id="flightaware-budget" class="footnote"></p>
+          </section>
+          <section class="side-card rarity">
+            <div class="eyebrow">RARE AROUND HERE</div>
+            <h2>The uncommon types</h2>
+            <p class="side-intro">
+              Fewest distinct aircraft IDs in your last 30 days.
+            </p>
+            <div id="rarity-status" class="baseline">
+              Learning your local traffic
+            </div>
+            <div class="progress"><div id="rarity-progress"></div></div>
+            <p id="rarity-context" class="muted"></p>
+            <div id="types"></div>
+            <p class="footnote">
+              Local frequency, not worldwide rarity. New types need time to find
+              their place.
+            </p>
+          </section>
+          <section class="side-card">
+            <div class="eyebrow">REPORTED RECORDS</div>
+            <h2>The big numbers</h2>
+            <div id="records"></div>
+            <p class="footnote">
+              Collected observations, including imported history. Live speed and
+              altitude records count only each aircraft's own ADS-B reports, and
+              ground speed includes wind. Range is saved only as a 50-nm band
+              and includes merged sources.
+            </p>
+          </section>
+          <section class="side-card watching">
+            <div class="eyebrow">ALWAYS ON THE LOOKOUT</div>
+            <h2>What gets a flag?</h2>
+            <ul>
+              <li><span>01</span>Military tags &amp; special airframes</li>
+              <li><span>02</span>Exceptional age &amp; unfamiliar visitors</li>
+              <li><span>03</span>Speed &amp; altitude unusual for the type</li>
+              <li><span>04</span>Repeated circling</li>
+              <li><span>05</span>Position jumps &amp; odd values</li>
+              <li><span>06</span>Special transponder codes</li>
+            </ul>
+            <button type="button" id="rules-button" class="text-button">
+              See the rules &amp; explanations →
+            </button>
+          </section>
+          <div class="quiet-note">
+            <span>✳</span>
+            <p>
+              Quiet is a result, too. This page never invents sightings to fill
+              a card.
+            </p>
+          </div>
+        </aside>
+      </div>
+    </main>
+    <footer class="shell">
+      <span>WTF RADAR <b>·</b> YOUR RECEIVER, YOUR DISCOVERIES</span
+      ><span id="updated">Updates every 15 seconds</span
+      ><a id="json-export" href="/wtf/api/export.json">JSON export ↗</a>
+    </footer>
+    <dialog id="how-dialog" aria-labelledby="how-title">
+      <button
+        type="button"
+        class="dialog-close"
+        id="close-dialog"
+        aria-label="Close explanations"
+      >
+        ×
+      </button>
+      <div class="eyebrow">CURIOSITY, WITH CONTEXT</div>
+      <h2 id="how-title">What makes the radar go WTF?</h2>
+      <p>
+        Every card comes from your receiver, saved replay archives or existing
+        local metric history. These are spotting rules you can investigate, not
+        proof of an aircraft’s mission or an incident.
+      </p>
+      <div class="rule-list">
+        <section>
+          <h3>Unusual airframes</h3>
+          <p>
+            Military and “interesting” database flags, a curated type watchlist,
+            database years at least 50 years old, and unusual transmitted
+            emitter categories remain searchable. Highlights favor ages 65+ and
+            distinctive matches. Identity highlights have a 30-day repeat
+            cooldown. The journal also notes the first type or address
+            allocation country in this station's records and curated military
+            and government variants. Metadata can be wrong and cannot establish
+            a mission.
+          </p>
+        </section>
+        <section>
+          <h3>Rare in your sky</h3>
+          <p>
+            A type represented by at most 3 unique ICAO addresses and no more
+            than 1% of known-type aircraft IDs in 30 days. A type must appear on
+            at most 3 days and the individual aircraft on at most 2 days. This
+            activates after 7 days with at least an hour of reception each, 24
+            total hours of recorded coverage, and 250 unique ICAO addresses.
+            Valid compact replay intervals count toward coverage; imported
+            metric maxima alone do not.
+          </p>
+        </section>
+        <section>
+          <h3>Big numbers</h3>
+          <p>
+            General spotting thresholds start at 600 kn and 49,000 ft. With at
+            least 20 aircraft addresses, local type history adjusts these
+            thresholds. They are spotting heuristics, not aircraft limits.
+            Ordinary numeric highlights require four coherent updates over at
+            least 30 seconds. Individual field ages remain unknown. Ground speed
+            does not determine Mach number.
+          </p>
+        </section>
+        <section>
+          <h3>Odd data</h3>
+          <p>
+            A fresh-position jump exceeding 12 nm and implying more than 1,200
+            kn over 2–45 seconds; speeds over 900 kn; speeds or altitudes beyond
+            a conservative envelope for the listed type; extreme reported
+            altitudes or vertical rates; a 3,000+ ft gap between geometric and
+            pressure altitude (4,000 ft from FL180); identity details that
+            disagree; or a spacecraft emitter category. These are reasons to
+            inspect the data, not claims of impossible aircraft.
+          </p>
+        </section>
+        <section>
+          <h3>Flight patterns</h3>
+          <p>
+            Repeated circling, loitering and repeated passes require several
+            minutes of fresh, plausible positions. Missing altitude or heading
+            does not prevent a match. Noisy or sparse tracks can support only a
+            confined-activity candidate, with a lower confidence level and no
+            reliable circle count. While a verified circle stays within the
+            20-minute track, turns inside it are not saved again as reversals or
+            loitering, and earlier ones it covers are folded into it. Aircraft
+            are also compared with each other: two flying in close company,
+            three or more circling at different levels, and integrity reports
+            dropping on several aircraft at once. These patterns do not
+            establish a mission.
+          </p>
+        </section>
+        <section>
+          <h3>Special codes</h3>
+          <p>
+            7400, 7500, 7600, 7700 or another transmitted emergency/priority
+            status, US special-use codes, and TCAS resolution advisories that
+            readsb decodes. A sequence such as 7700 then 7600 is one episode.
+            Live findings require two new receiver observations of the same
+            status; isolated archived reports are marked unconfirmed. Code and
+            advisory reports alone do not confirm a real emergency or a near
+            miss.
+          </p>
+        </section>
+        <section>
+          <h3>Evidence and history</h3>
+          <p>
+            Most live findings require two observations with new message counts
+            over at least 8 seconds. Position-jump cards preserve the two
+            positions; isolated extreme archive readings are explicitly marked
+            unconfirmed. Movement findings require two distinct qualifying
+            position endpoints at least 8 seconds apart and are grouped across
+            gaps of up to 2 minutes. Other similar findings for the same address
+            are grouped within 10 minutes of the same live encounter, and
+            identity findings once per aircraft per UTC day. A brief ground
+            report in the middle of a flight does not end the encounter. The
+            journal keeps up to 365 days / 50,000 sightings. Compact replay
+            altitude may be barometric or geometric; current aircraft metadata
+            may differ from the historical aircraft. Imported metric highlights
+            do not preserve complete simultaneous positions or field freshness.
+          </p>
+        </section>
+      </div>
+      <p class="source-links">
+        Sources:
+        <a
+          href="https://github.com/wiedehopf/readsb/blob/dev/README-json.md"
+          target="_blank"
+          rel="noreferrer"
+          >readsb data fields</a
+        >
+        ·
+        <a
+          href="https://www.faa.gov/air_traffic/publications/atpubs/atc_html/chap5_section_2.html"
+          target="_blank"
+          rel="noreferrer"
+          >FAA transponder guidance</a
+        >
+        ·
+        <a
+          href="https://www.faa.gov/air_traffic/publications/aim_html/chap4_section_1.html"
+          target="_blank"
+          rel="noreferrer"
+          >FAA code changes</a
+        >
+        ·
+        <a
+          href="https://www.icao.int/operational-safety/doc-8643-aircraft-type-designators/search"
+          target="_blank"
+          rel="noreferrer"
+          >ICAO type designators</a
+        >
+      </p>
+    </dialog>
+    <dialog id="note-dialog" aria-label="Sighting field notes">
+      <button
+        type="button"
+        class="dialog-close"
+        id="close-note"
+        aria-label="Close sighting"
+      >
+        ×
+      </button>
+      <div class="note-dialog-heading">
+        <div class="eyebrow">A PAGE FROM YOUR FIELD NOTEBOOK</div>
+        <a id="note-permalink" href="/wtf/">Permanent link ↗</a>
+      </div>
+      <div
+        id="note-status"
+        class="notice dialog-status"
+        role="alert"
+        hidden
+      ></div>
+      <div id="note-content"></div>
+    </dialog>
+  </body>
+</html>

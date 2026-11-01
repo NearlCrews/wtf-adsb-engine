@@ -1,0 +1,14 @@
+version = 1
+state_directory = "../state/live"
+source_instance = "receiver"
+poll_interval_seconds = 60
+
+[[pipelines]]
+name = "receiver"
+input = { plugin = "wtf_adsb.receiver_service", options = { url = "http://127.0.0.1:8080/data/aircraft.json", poll_seconds = 10, type_registry = false, wind = false } }
+detectors = [{ plugin = "wtf_adsb.collection" }]
+
+[[outputs]]
+name = "files"
+plugin = "wtf_adsb.files"
+options = { directory = "../state/export-live" }

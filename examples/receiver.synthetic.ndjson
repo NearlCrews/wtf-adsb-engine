@@ -1,0 +1,8 @@
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.0, "lon": -100, "messages": 100, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150000}
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.001, "lon": -100, "messages": 101, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150010}
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.002, "lon": -100, "messages": 102, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150020}
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.003, "lon": -100, "messages": 103, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150030}
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.004, "lon": -100, "messages": 104, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150040}
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.005, "lon": -100, "messages": 105, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150050}
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.006, "lon": -100, "messages": 106, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150060}
+{"aircraft": [{"alt_baro": 5000, "gs": 80, "hex": "a00001", "lat": 40.007, "lon": -100, "messages": 107, "r": "N1", "seen": 0, "seen_pos": 0, "squawk": "7700", "t": "C172", "type": "adsb_icao"}], "now": 1791150070}

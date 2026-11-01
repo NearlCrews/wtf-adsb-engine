@@ -1,0 +1,253 @@
+{
+ "codes": [
+  {
+   "category": "placeholder",
+   "first": "0000",
+   "label": "UAT power-up code",
+   "last": "0000",
+   "meaning": "Used by certain UAT ADS-B units on power-up until the aircraft enters beacon interrogation coverage. ATC never assigns it.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1; paragraph 7e"
+  },
+  {
+   "category": "special_use",
+   "first": "1000",
+   "label": "ADS-B Mode 3/A inhibit",
+   "last": "1000",
+   "meaning": "Used exclusively by ADS-B aircraft to inhibit Mode 3/A transmission.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "vfr",
+   "first": "1200",
+   "label": "VFR",
+   "last": "1200",
+   "meaning": "VFR aircraft that may or may not be in contact with ATC.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1; AIM 4-1-20"
+  },
+  {
+   "category": "vfr",
+   "first": "1201",
+   "label": "VFR, Los Angeles SFRA",
+   "last": "1201",
+   "meaning": "VFR aircraft operating in the Los Angeles Special Flight Rules Area.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "vfr",
+   "first": "1202",
+   "label": "VFR glider",
+   "last": "1202",
+   "meaning": "VFR gliders that may or may not be in contact with ATC.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1; AIM 4-1-20"
+  },
+  {
+   "category": "vfr",
+   "first": "1203",
+   "label": "VFR formation lead",
+   "last": "1203",
+   "meaning": "VFR standard formation flights not in contact with ATC; the lead aircraft squawks 1203 and the others squawk standby.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1; AIM 4-1-20"
+  },
+  {
+   "category": "vfr",
+   "first": "1205",
+   "label": "VFR helicopters (regional)",
+   "last": "1205",
+   "meaning": "VFR helicopters in the Los Angeles region, or VFR departures from Washington DC SFRA fringe airports.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "vfr",
+   "first": "1206",
+   "label": "VFR public service helicopters (regional)",
+   "last": "1206",
+   "meaning": "Reserved for VFR public service helicopters in the Los Angeles region.",
+   "sensitive": true,
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "vfr",
+   "first": "1234",
+   "label": "VFR pattern work, Washington DC SFRA",
+   "last": "1234",
+   "meaning": "VFR aircraft conducting pattern work at airports in the Washington DC SFRA.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "special_use",
+   "first": "1255",
+   "label": "Firefighting aircraft",
+   "last": "1255",
+   "meaning": "Firefighting aircraft; those not in contact with ATC may use it en route to, from or within a firefighting area.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1; AIM 4-1-20"
+  },
+  {
+   "category": "test",
+   "first": "1273",
+   "label": "Ground test transponders",
+   "last": "1275",
+   "meaning": "Calibration Performance Monitoring Equipment, MSSR Remote System Monitor and PARROT transponders.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "special_use",
+   "first": "1276",
+   "label": "ADIZ penetration without communication",
+   "last": "1276",
+   "meaning": "Air Defense Identification Zone penetration when unable to establish communication with ATC or an aeronautical facility.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "special_use",
+   "first": "1277",
+   "label": "Search and rescue",
+   "last": "1277",
+   "meaning": "Designated search and rescue aircraft; VFR aircraft on authorized USAF or USCG SAR missions may be advised to use it.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1; AIM 4-1-20"
+  },
+  {
+   "category": "special_use",
+   "first": "4000",
+   "label": "Military restricted/warning areas",
+   "last": "4000",
+   "meaning": "Military pilots operating within restricted or warning areas use it unless ATC assigns another code. The order also lists 4000 among external ARTCC code blocks.",
+   "source": "AIM 4-1-20; JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "reserved",
+   "first": "4400",
+   "label": "Reserved subset",
+   "last": "4433",
+   "meaning": "Reserved/allocated subset; the order does not publish its users.",
+   "sensitive": true,
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "special_use",
+   "first": "4434",
+   "label": "Weather reconnaissance",
+   "last": "4437",
+   "meaning": "Weather reconnaissance, as appropriate.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "reserved",
+   "first": "4440",
+   "label": "Reserved subset",
+   "last": "4452",
+   "meaning": "Reserved/allocated subset; the order does not publish its users.",
+   "sensitive": true,
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "special_use",
+   "first": "4453",
+   "label": "High balloon operations",
+   "last": "4453",
+   "meaning": "High balloon operations by the National Scientific Balloon Facility and other providers, some in international operations.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "reserved",
+   "first": "4454",
+   "label": "Reserved subset",
+   "last": "4477",
+   "meaning": "Reserved/allocated subset; the order does not publish its users.",
+   "sensitive": true,
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "status",
+   "first": "7400",
+   "label": "Unmanned aircraft lost link",
+   "last": "7400",
+   "meaning": "Reserved for an unmanned aircraft experiencing a lost link situation.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "status",
+   "first": "7500",
+   "label": "Unlawful interference",
+   "last": "7500",
+   "meaning": "Hijack/unlawful interference; reserved internationally.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "reserved",
+   "first": "7501",
+   "label": "Reserved subset",
+   "last": "7577",
+   "meaning": "Reserved/allocated subset; the order does not publish its users.",
+   "sensitive": true,
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "status",
+   "first": "7600",
+   "label": "Communication failure",
+   "last": "7600",
+   "meaning": "Communication failure; reserved internationally.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "reserved",
+   "first": "7601",
+   "label": "Reserved subset",
+   "last": "7607",
+   "meaning": "Reserved/allocated subset; the order does not publish its users.",
+   "sensitive": true,
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "status",
+   "first": "7700",
+   "label": "Emergency",
+   "last": "7700",
+   "meaning": "Emergency; reserved internationally.",
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "reserved",
+   "first": "7701",
+   "label": "Reserved subset",
+   "last": "7707",
+   "meaning": "Reserved/allocated subset; the order does not publish its users.",
+   "sensitive": true,
+   "source": "JO 7110.66H, Appendix A, TBL A-1"
+  },
+  {
+   "category": "special_use",
+   "first": "7777",
+   "label": "Military interceptor operations",
+   "last": "7777",
+   "meaning": "Reserved for military interceptor operations; civil aircraft must never use it.",
+   "source": "AIM 4-1-20; JO 7110.66H, Appendix A, TBL A-1 (reserved/allocated)"
+  }
+ ],
+ "content_sha256": "6935901178ad824eb8f5afc231be81e32ecf0f09089e18cdb97cf00798adaa8f",
+ "dataset_version": "reference-beacon-codes-v1",
+ "jurisdiction": "US domestic, oceanic and arctic airspace (FAA)",
+ "notes": ["United States allocations. Other States allocate codes differently, facilities can reuse codes locally, and a code alone never establishes a mission, an emergency or the aircraft's operator.", "Sensitive entries are reserved subsets whose users are not published; public text must not speculate about them."],
+ "prepared_on": "2026-10-06",
+ "schema_version": 1,
+ "sources": [
+  {
+   "edition": "FAA Order JO 7110.66H, effective 2024-05-06",
+   "license": "US Government work (public domain)",
+   "license_url": "https://www.usa.gov/government-copyright",
+   "name": "faa-nbcap",
+   "retrieved_at": "2026-10-06T00:25:47Z",
+   "sha256": "250c9f17ea74509cf3bd163e13cc7f6436a13891e2e9fd92e3c4f4e6a3b2a4ae",
+   "url": "https://www.faa.gov/documentLibrary/media/Order/2024-04-04_Order_JO_7110.66H_National_Beacon_Code_Allocation_Plan_(NBCAP)_FINAL.pdf"
+  },
+  {
+   "edition": "Aeronautical Information Manual, Chapter 4, Section 1 (paragraph 4-1-20)",
+   "license": "US Government work (public domain)",
+   "license_url": "https://www.usa.gov/government-copyright",
+   "name": "faa-aim",
+   "retrieved_at": "2026-10-06T00:26:22Z",
+   "sha256": "dccf566419e967c74638035642d4466bb6428ad1f8533dba5b8e9695fe5d020f",
+   "url": "https://www.faa.gov/air_traffic/publications/atpubs/aim_html/chap4_section_1.html"
+  }
+ ]
+}

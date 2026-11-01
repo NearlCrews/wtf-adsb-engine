@@ -1,0 +1,804 @@
+{
+ "content_sha256": "fcc4bb20dbd5efb6cc42a2728c9a4be2f0f962b3651da40315bce7de9c596cd5",
+ "dataset_version": "reference-limits-v1",
+ "notes": ["Values are transcribed from type certificate data sheets (TCDS). Each entry names the citing document; a type without an entry gets no rated-limit finding. Types certified in experimental, restricted, or military categories have no civil sheet and are left out on purpose.", "source is the sheet an entry's limits are cited from. Where the verification reads a figure from another sheet, speed_source names the sheet of the airspeed limits (Vmo, Mmo, and Vne) and altitude_source the sheet of the maximum operating altitude; each limit is cited from its own sheet.", "verification says how each value was read: easa-tcds-text means the figure was read from the cited EASA sheet's text on prepared_on; faa-tcds-number means it is transcribed from the named FAA sheet without a fetched copy. Where one designator covers several models or modification states, the entry carries the highest certified value among them, so a reading must exceed every variant's limit before it counts.", "max_operating_altitude_ft is the certified maximum operating altitude. vmo_kias and mmo are the maximum operating limit speeds; vne_kias is the never-exceed speed of types certified with one. null means the sheet states no such limit or it was not transcribed.", "Each limit is one value. Where a sheet gives Vmo as an altitude schedule, the entry carries the highest applicable value, so no reading is compared with a limit stricter than any the sheet states; a comparison may therefore understate an exceedance at the altitudes with a lower limit, never overstate one.", "A finding compares sustained readings with these limits through the ISA atmosphere and, for speed, an estimated or reported true airspeed. It describes received data; it never establishes a violation, an emergency, or a cause."],
+ "prepared_on": "2026-10-07",
+ "schema_version": 1,
+ "sources": [
+  {
+   "index_url": "https://www.easa.europa.eu/en/document-library/type-certificates",
+   "license": "EASA publication; facts",
+   "name": "easa-tcds",
+   "use": "Maximum operating altitude and VMO/MMO read from EASA type certificate data sheets; each type names its sheet and issue"
+  },
+  {
+   "index_url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails",
+   "license": "US Government work (public domain)",
+   "license_url": "https://www.usa.gov/government-copyright",
+   "name": "faa-tcds",
+   "use": "Airspeed limits the EASA sheet defers to the FAA sheet for, and limits of types certified only by the FAA; each type names its sheet"
+  }
+ ],
+ "types": {
+  "A19N": {
+   "max_operating_altitude_ft": 41100,
+   "mmo": 0.82,
+   "name": "Airbus A319neo",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.064 (Airbus A318, A319, A320, A321), Issue 62",
+    "url": "https://www.easa.europa.eu/en/downloads/16507/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "A20N": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Airbus A320neo",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.064 (Airbus A318, A319, A320, A321), Issue 62",
+    "url": "https://www.easa.europa.eu/en/downloads/16507/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "A21N": {
+   "max_operating_altitude_ft": 39800,
+   "mmo": 0.82,
+   "name": "Airbus A321neo",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.064 (Airbus A318, A319, A320, A321), Issue 62",
+    "url": "https://www.easa.europa.eu/en/downloads/16507/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "A319": {
+   "max_operating_altitude_ft": 41100,
+   "mmo": 0.82,
+   "name": "Airbus A319",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.064 (Airbus A318, A319, A320, A321), Issue 62",
+    "url": "https://www.easa.europa.eu/en/downloads/16507/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "A320": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Airbus A320",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.064 (Airbus A318, A319, A320, A321), Issue 62",
+    "url": "https://www.easa.europa.eu/en/downloads/16507/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "A321": {
+   "max_operating_altitude_ft": 39800,
+   "mmo": 0.82,
+   "name": "Airbus A321",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.064 (Airbus A318, A319, A320, A321), Issue 62",
+    "url": "https://www.easa.europa.eu/en/downloads/16507/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "A332": {
+   "max_operating_altitude_ft": 41450,
+   "mmo": null,
+   "name": "Airbus A330-200",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.004 (Airbus A330), Issue 69",
+    "url": "https://www.easa.europa.eu/en/downloads/7518/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "A333": {
+   "max_operating_altitude_ft": 41450,
+   "mmo": null,
+   "name": "Airbus A330-300",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.004 (Airbus A330), Issue 69",
+    "url": "https://www.easa.europa.eu/en/downloads/7518/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "A339": {
+   "max_operating_altitude_ft": 41450,
+   "mmo": null,
+   "name": "Airbus A330-900",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.004 (Airbus A330), Issue 69",
+    "url": "https://www.easa.europa.eu/en/downloads/7518/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "A359": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": null,
+   "name": "Airbus A350-900",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.151 (Airbus A350), Issue 33",
+    "url": "https://www.easa.europa.eu/en/downloads/17736/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "A35K": {
+   "max_operating_altitude_ft": 41450,
+   "mmo": null,
+   "name": "Airbus A350-1000",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.151 (Airbus A350), Issue 33",
+    "url": "https://www.easa.europa.eu/en/downloads/17736/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "B38M": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Boeing 737 MAX 8",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.120 (Boeing 737), Issue 29",
+    "url": "https://www.easa.europa.eu/en/downloads/7297/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A16WE (Boeing 737)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A16WE",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "B39M": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Boeing 737 MAX 9",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.120 (Boeing 737), Issue 29",
+    "url": "https://www.easa.europa.eu/en/downloads/7297/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A16WE (Boeing 737)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A16WE",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "B737": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Boeing 737-700",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.120 (Boeing 737), Issue 29",
+    "url": "https://www.easa.europa.eu/en/downloads/7297/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A16WE (Boeing 737)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A16WE",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "B738": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Boeing 737-800",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.120 (Boeing 737), Issue 29",
+    "url": "https://www.easa.europa.eu/en/downloads/7297/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A16WE (Boeing 737)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A16WE",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "B739": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Boeing 737-900",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.120 (Boeing 737), Issue 29",
+    "url": "https://www.easa.europa.eu/en/downloads/7297/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A16WE (Boeing 737)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A16WE",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "B744": {
+   "max_operating_altitude_ft": 45100,
+   "mmo": 0.92,
+   "name": "Boeing 747-400",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.196 (Boeing 747), Issue 19",
+    "url": "https://www.easa.europa.eu/en/downloads/7250/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KCAS)",
+   "vmo_kias": 375,
+   "vne_kias": null
+  },
+  "B748": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.9,
+   "name": "Boeing 747-8",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.196 (Boeing 747), Issue 19",
+    "url": "https://www.easa.europa.eu/en/downloads/7250/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KCAS)",
+   "vmo_kias": 365,
+   "vne_kias": null
+  },
+  "B752": {
+   "max_operating_altitude_ft": 42000,
+   "mmo": 0.86,
+   "name": "Boeing 757-200",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.205 (Boeing 757), Issue 06",
+    "url": "https://www.easa.europa.eu/en/downloads/7246/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A2NM (Boeing 757)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A2NM",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "B753": {
+   "max_operating_altitude_ft": 42000,
+   "mmo": 0.86,
+   "name": "Boeing 757-300",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.205 (Boeing 757), Issue 06",
+    "url": "https://www.easa.europa.eu/en/downloads/7246/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A2NM (Boeing 757)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A2NM",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "B763": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.86,
+   "name": "Boeing 767-300",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.035 (Boeing 767), Issue 11",
+    "url": "https://www.easa.europa.eu/en/downloads/7454/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A1NM (Boeing 767)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A1NM",
+   "vmo_kias": 360,
+   "vne_kias": null
+  },
+  "B764": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.86,
+   "name": "Boeing 767-400ER",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.035 (Boeing 767), Issue 11",
+    "url": "https://www.easa.europa.eu/en/downloads/7454/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A1NM (Boeing 767)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A1NM",
+   "vmo_kias": 360,
+   "vne_kias": null
+  },
+  "B772": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.87,
+   "name": "Boeing 777-200",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.003 (Boeing 777), Issue 20.0",
+    "url": "https://www.easa.europa.eu/en/downloads/7521/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet T00001SE (Boeing 777)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number T00001SE",
+   "vmo_kias": 330,
+   "vne_kias": null
+  },
+  "B77L": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.87,
+   "name": "Boeing 777-200LR",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.003 (Boeing 777), Issue 20.0",
+    "url": "https://www.easa.europa.eu/en/downloads/7521/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet T00001SE (Boeing 777)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number T00001SE",
+   "vmo_kias": 330,
+   "vne_kias": null
+  },
+  "B77W": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.87,
+   "name": "Boeing 777-300ER",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.003 (Boeing 777), Issue 20.0",
+    "url": "https://www.easa.europa.eu/en/downloads/7521/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet T00001SE (Boeing 777)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number T00001SE",
+   "vmo_kias": 330,
+   "vne_kias": null
+  },
+  "B788": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.9,
+   "name": "Boeing 787-8",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.115 (Boeing 787), Issue 30",
+    "url": "https://www.easa.europa.eu/en/downloads/7302/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KEAS)",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "B789": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.9,
+   "name": "Boeing 787-9",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.115 (Boeing 787), Issue 30",
+    "url": "https://www.easa.europa.eu/en/downloads/7302/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KEAS)",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "B78X": {
+   "max_operating_altitude_ft": 43100,
+   "mmo": 0.9,
+   "name": "Boeing 787-10",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.115 (Boeing 787), Issue 30",
+    "url": "https://www.easa.europa.eu/en/downloads/7302/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KEAS)",
+   "vmo_kias": 350,
+   "vne_kias": null
+  },
+  "BE20": {
+   "max_operating_altitude_ft": 35000,
+   "mmo": null,
+   "name": "Beechcraft King Air 200",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.277 (Beechcraft B200, B200C, B200GT, B200CGT, B300, B300C), Issue 22",
+    "url": "https://www.easa.europa.eu/en/downloads/7208/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KCAS)",
+   "vmo_kias": 270,
+   "vne_kias": null
+  },
+  "BE30": {
+   "max_operating_altitude_ft": 35000,
+   "mmo": 0.58,
+   "name": "Beechcraft King Air 300",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.277 (Beechcraft B200, B200C, B200GT, B200CGT, B300, B300C), Issue 22",
+    "url": "https://www.easa.europa.eu/en/downloads/7208/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 263,
+   "vne_kias": null
+  },
+  "C680": {
+   "max_operating_altitude_ft": 47000,
+   "mmo": null,
+   "name": "Cessna Citation Sovereign",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.033 (Cessna 680), Issue 09",
+    "url": "https://www.easa.europa.eu/en/downloads/7459/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "C68A": {
+   "max_operating_altitude_ft": 45000,
+   "mmo": null,
+   "name": "Cessna Citation Latitude",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.033 (Cessna 680), Issue 09",
+    "url": "https://www.easa.europa.eu/en/downloads/7459/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "C700": {
+   "altitude_source": {
+    "title": "FAA Type Certificate Data Sheet T00013WI (Cessna Model 700)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "max_operating_altitude_ft": 45000,
+   "mmo": 0.84,
+   "name": "Cessna Citation Longitude",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.620 (Cessna Model 700), Issue 03",
+    "url": "https://www.easa.europa.eu/en/downloads/129064/en"
+   },
+   "verification": "easa-tcds-text for speeds; altitude faa-tcds-number T00013WI",
+   "vmo_kias": 325,
+   "vne_kias": null
+  },
+  "CRJ7": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.85,
+   "name": "Bombardier CRJ700",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.673 (CL-600 Regional Jet Series), Issue 3.0",
+    "url": "https://www.easa.europa.eu/en/downloads/111186/en"
+   },
+   "verification": "easa-tcds-text (VMO 330 below 8,000 ft; 335 above, from the flight manual the sheet cites)",
+   "vmo_kias": 335,
+   "vne_kias": null
+  },
+  "CRJ9": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.85,
+   "name": "Bombardier CRJ900",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.673 (CL-600 Regional Jet Series), Issue 3.0",
+    "url": "https://www.easa.europa.eu/en/downloads/111186/en"
+   },
+   "verification": "easa-tcds-text (VMO 330 below 8,000 ft; 335 above, from the flight manual the sheet cites)",
+   "vmo_kias": 335,
+   "vne_kias": null
+  },
+  "CRJX": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.85,
+   "name": "Bombardier CRJ1000",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.673 (CL-600 Regional Jet Series), Issue 3.0",
+    "url": "https://www.easa.europa.eu/en/downloads/111186/en"
+   },
+   "verification": "easa-tcds-text (VMO 330 below 8,000 ft; 335 above, from the flight manual the sheet cites)",
+   "vmo_kias": 335,
+   "vne_kias": null
+  },
+  "DH8C": {
+   "max_operating_altitude_ft": 25000,
+   "mmo": null,
+   "name": "De Havilland Canada Dash 8-300",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.191 (De Havilland DHC-8), Issue 16",
+    "url": "https://www.easa.europa.eu/en/downloads/7257/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "DH8D": {
+   "max_operating_altitude_ft": 27000,
+   "mmo": null,
+   "name": "De Havilland Canada Dash 8-400",
+   "source": {
+    "title": "FAA Type Certificate Data Sheet A13NM (DHC-8 series)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "speed_source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.191 (De Havilland DHC-8), Issue 16",
+    "url": "https://www.easa.europa.eu/en/downloads/7257/en"
+   },
+   "verification": "faa-tcds-number A13NM for 27,000 ft (EASA.IM.A.191 Issue 16 states 25,000 ft; the higher certified value is kept); VMO easa-tcds-text from EASA.IM.A.191, highest of the schedule 245 kt to 8,000 ft, 282 kt at 10,000 ft, 286 kt at 18,000 ft, 248 kt at 25,000 ft",
+   "vmo_kias": 286,
+   "vne_kias": null
+  },
+  "E170": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Embraer 170",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.001 (Embraer ERJ-170), Issue 13",
+    "url": "https://www.easa.europa.eu/en/downloads/7525/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A56NM (Embraer ERJ-170)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A56NM",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "E190": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Embraer 190",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.071 (Embraer ERJ-190), Issue 28",
+    "url": "https://www.easa.europa.eu/en/downloads/7382/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A57NM (Embraer ERJ-190)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A57NM",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "E195": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Embraer 195",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.071 (Embraer ERJ-190), Issue 28",
+    "url": "https://www.easa.europa.eu/en/downloads/7382/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A57NM (Embraer ERJ-190)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A57NM",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "E290": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Embraer E190-E2",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.071 (Embraer ERJ-190), Issue 28",
+    "url": "https://www.easa.europa.eu/en/downloads/7382/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A57NM (Embraer ERJ-190)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A57NM",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "E295": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Embraer E195-E2",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.071 (Embraer ERJ-190), Issue 28",
+    "url": "https://www.easa.europa.eu/en/downloads/7382/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A57NM (Embraer ERJ-190)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A57NM",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "E55P": {
+   "max_operating_altitude_ft": 45000,
+   "mmo": 0.8,
+   "name": "Embraer Phenom 300",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.158 (Embraer EMB-505), Issue 11",
+    "url": "https://www.easa.europa.eu/en/downloads/7282/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "E75L": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Embraer 175",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.001 (Embraer ERJ-170), Issue 13",
+    "url": "https://www.easa.europa.eu/en/downloads/7525/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A56NM (Embraer ERJ-170)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A56NM",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "E75S": {
+   "max_operating_altitude_ft": 41000,
+   "mmo": 0.82,
+   "name": "Embraer 175",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.001 (Embraer ERJ-170), Issue 13",
+    "url": "https://www.easa.europa.eu/en/downloads/7525/en"
+   },
+   "speed_source": {
+    "title": "FAA Type Certificate Data Sheet A56NM (Embraer ERJ-170)",
+    "url": "https://drs.faa.gov/browse/TCDSMODEL/doctypeDetails"
+   },
+   "verification": "easa-tcds-text; speeds faa-tcds-number A56NM",
+   "vmo_kias": 320,
+   "vne_kias": null
+  },
+  "F2TH": {
+   "max_operating_altitude_ft": 47000,
+   "mmo": 0.87,
+   "name": "Dassault Falcon 2000",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.008 (Dassault Falcon 2000), Issue 13",
+    "url": "https://www.easa.europa.eu/en/downloads/7510/en"
+   },
+   "verification": "easa-tcds-text (VMO and MMO vary with altitude; highest values)",
+   "vmo_kias": 370,
+   "vne_kias": null
+  },
+  "GA5C": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.925,
+   "name": "Gulfstream G500",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.595 (Gulfstream GVII), Issue 15",
+    "url": "https://www.easa.europa.eu/en/downloads/104086/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KCAS)",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "GA6C": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.925,
+   "name": "Gulfstream G600",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet IM.A.595 (Gulfstream GVII), Issue 15",
+    "url": "https://www.easa.europa.eu/en/downloads/104086/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KCAS)",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "GA7C": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.935,
+   "name": "Gulfstream G700",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.169 (Gulfstream GVI), Issue 17",
+    "url": "https://www.easa.europa.eu/en/downloads/7278/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KCAS)",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "GL5T": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.9,
+   "name": "Bombardier Global 5000",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.009 (Bombardier BD-700), Issue 14",
+    "url": "https://www.easa.europa.eu/en/downloads/7508/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "GL7T": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": null,
+   "name": "Bombardier Global 7500",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.009 (Bombardier BD-700), Issue 14",
+    "url": "https://www.easa.europa.eu/en/downloads/7508/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "GLEX": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.9,
+   "name": "Bombardier Global Express",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.009 (Bombardier BD-700), Issue 14",
+    "url": "https://www.easa.europa.eu/en/downloads/7508/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": null,
+   "vne_kias": null
+  },
+  "GLF6": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.925,
+   "name": "Gulfstream G650",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.169 (Gulfstream GVI), Issue 17",
+    "url": "https://www.easa.europa.eu/en/downloads/7278/en"
+   },
+   "verification": "easa-tcds-text (VMO stated in KCAS)",
+   "vmo_kias": 340,
+   "vne_kias": null
+  },
+  "LJ40": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.81,
+   "name": "Learjet 40",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.020 (Learjet 45), Issue 18",
+    "url": "https://www.easa.europa.eu/en/downloads/7485/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 330,
+   "vne_kias": null
+  },
+  "LJ45": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.81,
+   "name": "Learjet 45",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.020 (Learjet 45), Issue 18",
+    "url": "https://www.easa.europa.eu/en/downloads/7485/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 330,
+   "vne_kias": null
+  },
+  "LJ75": {
+   "max_operating_altitude_ft": 51000,
+   "mmo": 0.81,
+   "name": "Learjet 75",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.IM.A.020 (Learjet 45), Issue 18",
+    "url": "https://www.easa.europa.eu/en/downloads/7485/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 330,
+   "vne_kias": null
+  },
+  "PC12": {
+   "max_operating_altitude_ft": 30000,
+   "mmo": null,
+   "name": "Pilatus PC-12",
+   "source": {
+    "title": "EASA Type Certificate Data Sheet EASA.A.089 (Pilatus PC-12), Issue 11",
+    "url": "https://www.easa.europa.eu/en/downloads/7348/en"
+   },
+   "verification": "easa-tcds-text",
+   "vmo_kias": 240,
+   "vne_kias": null
+  }
+ }
+}

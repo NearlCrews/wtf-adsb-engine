@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "classifier": "runway-circuits-v1",
+  "dataset_version": "ourairports-runways-v1",
+  "dataset_sha256": "10d4d7f9b9810c531e2a22ec2e5393887a69db32aaf9a92f9cbf5388c4a3a39e",
+  "dataset_file_sha256": "6785f581c4123e264e81886f2038d20e6b8ebcba890751ba98312880b8efa05d",
+  "fixed_wing_types": ["AA5", "C152", "C172", "C182", "C185", "C206", "C82S", "DA40", "DV20", "F260", "P28A", "P32R", "TBM7"]
+}

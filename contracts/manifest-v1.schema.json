@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:wtf-adsb:contracts:manifest-v1:1.0.0",
+  "title": "WTF ADS-B export manifest v1",
+  "description": "Structural contract. Consumers must also enforce semantic wire validation, privacy projection, size limits, checksums, and stream continuity.",
+  "$ref": "#/$defs/manifest",
+  "$defs": {
+    "batchEntry": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^batches/[a-zA-Z0-9_.-]+\\.json$",
+          "maxLength": 255
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8388608
+        },
+        "sequence_start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sequence_end": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "bytes",
+        "sequence_start",
+        "sequence_end"
+      ],
+      "additionalProperties": false
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "health": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "live",
+            "replay"
+          ]
+        },
+        "last_receiver_poll": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "analysis_watermark": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ready",
+        "complete",
+        "mode",
+        "last_receiver_poll",
+        "analysis_watermark"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ready": {
+                "const": true
+              },
+              "mode": {
+                "const": "live"
+              }
+            },
+            "required": [
+              "ready",
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "last_receiver_poll": {
+                "type": "number",
+                "minimum": 0
+              },
+              "analysis_watermark": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "wtf-adsb.manifest"
+        },
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "profile": {
+          "const": "wtf-adsb.collection.v1"
+        },
+        "stream_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "generation": {
+          "$ref": "#/$defs/uuid"
+        },
+        "head_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updated_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "health": {
+          "$ref": "#/$defs/health"
+        },
+        "batches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchEntry"
+          },
+          "maxItems": 50000
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "profile",
+        "stream_id",
+        "generation",
+        "head_sequence",
+        "first_sequence",
+        "updated_at",
+        "health",
+        "batches"
+      ],
+      "additionalProperties": false
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

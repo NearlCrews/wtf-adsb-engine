@@ -1,0 +1,4 @@
+ARG BUILDER_IMAGE=wtf-adsb-engine:local-build
+FROM ${BUILDER_IMAGE}
+COPY examples/plugins/reference-label/ /plugin/
+RUN uv build --offline --no-build-isolation --python /build/.venv/bin/python --wheel /plugin --out-dir /plugin-dist

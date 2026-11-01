@@ -1,0 +1,50 @@
+services:
+  engine:
+    image: ${ENGINE_IMAGE:-wtf-adsb-engine:local}
+    user: "${ENGINE_UID:-1000}:${ENGINE_GID:-1000}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: ${ENGINE_STOP_GRACE:-600s}
+    mem_limit: ${ENGINE_MEMORY_LIMIT:-2g}
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - ${ENGINE_CONFIG_DIR:?Set ENGINE_CONFIG_DIR}:/config:ro
+      - ${ENGINE_STATE_DIR:?Set ENGINE_STATE_DIR}:/state
+      - ${ENGINE_FEED_DIR:?Set ENGINE_FEED_DIR}:/feed
+      - ${ENGINE_REFERENCE_DIR:?Set ENGINE_REFERENCE_DIR}:/references:ro
+    environment:
+      WTF_ADSB_REFERENCE_DIR: /references
+      WATCHLIST_CACHE: /references/watchlist.json
+    healthcheck:
+      test: [CMD, wtf-adsb-engine, health, --config, /config/receiver.toml, --max-age, "300"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: ${ENGINE_START_PERIOD:-300s}
+  viewer:
+    image: ${ENGINE_IMAGE:-wtf-adsb-engine:local}
+    user: "${ENGINE_UID:-1000}:${ENGINE_GID:-1000}"
+    command: [serve, --config, /config/receiver.toml, --host, 0.0.0.0]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${VIEWER_MEMORY_LIMIT:-512m}
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - ${ENGINE_CONFIG_DIR:?Set ENGINE_CONFIG_DIR}:/config:ro
+      - ${ENGINE_STATE_DIR:?Set ENGINE_STATE_DIR}:/state
+      - ${ENGINE_REFERENCE_DIR:?Set ENGINE_REFERENCE_DIR}:/references:ro
+    environment:
+      WTF_ADSB_REFERENCE_DIR: /references
+      WATCHLIST_CACHE: /references/watchlist.json
+    expose: [8080]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/wtf/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

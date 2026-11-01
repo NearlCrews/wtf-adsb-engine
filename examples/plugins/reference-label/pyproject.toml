@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wtf-adsb-example-reference-label"
+version = "0.1.0"
+description = "Offline example of an independently installed WTF ADS-B enrichment plugin"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.14"
+dependencies = ["wtf-adsb-engine==0.1.0"]
+
+[project.entry-points."wtf_adsb_engine.enrichers"]
+"org.example.reference_label" = "wtf_adsb_example_reference_label:ReferenceLabel"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wtf_adsb_example_reference_label"]

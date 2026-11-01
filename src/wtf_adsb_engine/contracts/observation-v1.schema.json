@@ -1,0 +1,456 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:wtf-adsb:contracts:observation-v1:1.0.0",
+  "title": "WTF ADS-B collection observation v1",
+  "description": "Structural contract. Consumers must also enforce semantic wire validation, privacy projection, size limits, checksums, and stream continuity.",
+  "$ref": "#/$defs/observation",
+  "$defs": {
+    "context": {
+      "type": "object",
+      "properties": {
+        "novelty": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "coverage_days": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "type_days": {
+                  "type": "object",
+                  "propertyNames": {
+                    "pattern": "^[A-Z0-9]{2,4}$"
+                  },
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "required": [
+                "coverage_days",
+                "type_days"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy_profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "extension": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "$ref": "#/$defs/namespace"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/schemaVersion"
+        },
+        "payload": {
+          "$ref": "#/$defs/jsonObject"
+        }
+      },
+      "required": [
+        "namespace",
+        "schema_version",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "finding": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "evidence": {
+          "$ref": "#/$defs/jsonObject"
+        },
+        "hex": {
+          "type": "string",
+          "pattern": "^~?[0-9a-fA-F]{6}(?![\\s\\S])",
+          "description": "Receiver track identifier. A leading ~ marks a non-ICAO track; it must not be treated as an ICAO aircraft address."
+        },
+        "category": {
+          "enum": [
+            "airframes",
+            "performance",
+            "patterns",
+            "oddities",
+            "signals"
+          ]
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "first_seen": {
+          "type": "number"
+        },
+        "last_seen": {
+          "type": "number"
+        },
+        "hits": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "verdict": {
+          "enum": [
+            "keep",
+            "routine",
+            "bad_data",
+            null
+          ]
+        },
+        "selection": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "score": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "promoted": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "story_eligible": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "review_required": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publication_hold": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verdict": {
+              "enum": [
+                "keep",
+                "routine",
+                "bad_data",
+                null
+              ]
+            },
+            "blocking_rules": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "maxItems": 256
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "maxItems": 256
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "group": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          },
+          "maxItems": 50000
+        },
+        "first_seen": {
+          "type": "number"
+        },
+        "last_seen": {
+          "type": "number"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "registration": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Z0-9][A-Z0-9-]{1,11}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "events",
+        "first_seen",
+        "last_seen"
+      ],
+      "additionalProperties": false
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      }
+    },
+    "jsonValue": {
+      "oneOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number"
+          ]
+        },
+        {
+          "type": "string",
+          "maxLength": 20000
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          },
+          "maxItems": 50000
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        }
+      ]
+    },
+    "media": {
+      "type": "object",
+      "properties": {
+        "by_finding": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/uuid"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "parts": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/mediaPoint"
+                  },
+                  "maxItems": 12000
+                },
+                "maxItems": 12000
+              }
+            },
+            "required": [
+              "parts"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "mediaPoint": {
+      "type": "object",
+      "properties": {
+        "ts": {
+          "type": "number"
+        },
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "speed": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "altitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "altitude_reference": {
+          "enum": [
+            "barometric",
+            "geometric",
+            "unspecified",
+            null
+          ]
+        }
+      },
+      "required": [
+        "ts",
+        "lat",
+        "lon",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "maxLength": 160
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/group"
+        },
+        "context": {
+          "$ref": "#/$defs/context"
+        },
+        "media": {
+          "$ref": "#/$defs/media"
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/extension"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "group",
+        "context",
+        "media"
+      ],
+      "additionalProperties": false
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "maxLength": 64
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

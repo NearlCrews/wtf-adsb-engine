@@ -1,0 +1,20 @@
+version = 1
+state_directory = "../../../state/reference-label-demo"
+source_instance = "reference-label-demo"
+synthetic = true
+
+[[extensions]]
+namespace = "org.example.reference_label"
+schema_version = "1.0.0"
+path = "src/wtf_adsb_example_reference_label/schema.json"
+
+[[pipelines]]
+name = "replay"
+input = { plugin = "wtf_adsb.json_replay", options = { path = "../../receiver.synthetic.ndjson" } }
+detectors = [{ plugin = "wtf_adsb.collection" }]
+enrichers = [{ plugin = "org.example.reference_label", options = { label = "Demonstration reference" } }]
+
+[[outputs]]
+name = "files"
+plugin = "wtf_adsb.files"
+options = { directory = "../../../state/reference-label-export" }

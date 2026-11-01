@@ -1,0 +1,15 @@
+version = 1
+state_directory = "../state/demo"
+source_instance = "demo"
+synthetic = true
+poll_interval_seconds = 1
+
+[[pipelines]]
+name = "replay"
+input = { plugin = "wtf_adsb.json_replay", options = { path = "receiver.synthetic.ndjson" } }
+detectors = [{ plugin = "wtf_adsb.collection" }]
+
+[[outputs]]
+name = "files"
+plugin = "wtf_adsb.files"
+options = { directory = "../state/export" }

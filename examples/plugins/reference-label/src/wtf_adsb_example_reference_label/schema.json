@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:org.example:reference-label:1.0.0",
+  "title": "Example configured reference annotation",
+  "type": "object",
+  "properties": {
+    "label": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$"
+    },
+    "basis": {
+      "const": "configured_reference"
+    },
+    "source_id": {
+      "const": "reference-label-example"
+    }
+  },
+  "required": ["label", "basis", "source_id"],
+  "additionalProperties": false
+}
