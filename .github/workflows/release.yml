@@ -10,7 +10,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -43,6 +43,13 @@ jobs:
           UV_OFFLINE: "1"
       - run: make image IMAGE="$IMAGE"
       - run: make test-image IMAGE="$IMAGE"
+      - name: Extract the image inventories
+        run: |
+          container="$(docker create "$IMAGE")"
+          trap 'docker rm "$container" > /dev/null' EXIT
+          for name in build.json packages.json; do
+            docker cp "$container:/usr/local/share/wtf-adsb-engine/$name" "$RUNNER_TEMP/release/$name"
+          done
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
@@ -71,13 +78,6 @@ jobs:
             echo
             echo "\`$image\`, also tagged \`$IMAGE\` and \`$LATEST\`."
           } >> "$RUNNER_TEMP/release/notes.md"
-      - name: Extract the image inventories
-        run: |
-          container="$(docker create "$IMAGE")"
-          trap 'docker rm "$container" > /dev/null' EXIT
-          for name in build.json packages.json; do
-            docker cp "$container:/usr/local/share/wtf-adsb-engine/$name" "$RUNNER_TEMP/release/$name"
-          done
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

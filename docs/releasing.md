@@ -99,13 +99,13 @@ The tag starts `.github/workflows/release.yml`, which uses only the workflow's
 1. refuses a tag that is not `v` followed by the `pyproject.toml` version, and
    takes the release notes from the matching changelog section with
    `tools/release_notes.py`;
-2. runs `make check`, `make image`, and `make test-image`;
+2. runs `make check`, `make image`, and `make test-image`, and copies
+   `build.json` and `packages.json` out of the local image;
 3. pushes the image to `ghcr.io/OWNER/wtf-adsb-engine` as both the version tag
    (`v0.1.0`) and `latest`, and writes the pushed digest to the job summary and
    the release notes;
-4. copies `build.json` and `packages.json` out of the image and creates the
-   GitHub release for the tag with those two inventories, the source archive,
-   and the wheel attached.
+4. creates the GitHub release for the tag with those two inventories, the
+   source archive, and the wheel attached. This is the only step after the push.
 
 GitHub derives the image name from the repository, lowercased, so `OWNER` is
 the account or organization that holds the repository. Replace the placeholder
@@ -114,6 +114,13 @@ only versions meant for general use. A new GHCR package is private until its
 visibility is changed in the package settings; make it public after the first
 release, then pull the tag and compare its digest with the release notes.
 
-A failed run can be rerun from the Actions page. If the release already exists,
-delete it (not the tag) before rerunning; pushing the same image tags again is
-harmless. Do not move a published tag; fix forward with a new version instead.
+A run that fails before the push can be rerun from the Actions page. Once the
+push has succeeded, do not rerun the workflow: the build is not
+byte-reproducible, so a rerun republishes the version tag and `latest` with a
+new digest that no longer matches the one already reported. If only the release
+creation failed, create the missing release by hand from that run's outputs
+instead: pull the pushed version tag and copy `build.json` and `packages.json`
+out of it, write the notes with `tools/release_notes.py` and add the digest
+from the run's job summary, build the archives with `make build` from the
+tagged commit, and attach them with `gh release create --verify-tag`. Do not
+move a published tag; fix forward with a new version instead.

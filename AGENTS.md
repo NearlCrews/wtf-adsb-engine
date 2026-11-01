@@ -53,8 +53,9 @@ name.
 Every subcommand prints one JSON object and exits nonzero on failure. Rerunning
 configure with the same answers changes nothing. configure refuses to take over
 an existing directory that holds other files unless it already has mode 0700
-and the configured owner. `deploy --print-only` shows the Compose commands
-without running them. When `viewer` is false, deploy starts only the engine
+and the configured owner. Under `sudo` it also refuses an existing directory
+that belongs to neither `uid` nor the user's account. `deploy --print-only`
+shows the Compose commands without running them. When `viewer` is false, deploy starts only the engine
 and stops and removes a viewer left from an earlier deploy.
 
 ## Upkeep to tell the user

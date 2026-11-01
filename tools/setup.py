@@ -155,8 +155,11 @@ def check_path(key, value):
             f"{key} must be an absolute path of letters, digits, '.', '_', '-', and '/' without '..'"
         )
     normal = os.path.normpath(value)
-    if len(Path(normal).parts) < 3:
-        raise SetupError(f"{key} must be at least two directories below /, such as /srv/wtf-adsb")
+    if len(Path(normal).parts) < 3 or len(Path(normal).resolve().parts) < 3:
+        raise SetupError(
+            f"{key} must be at least two directories below /, such as /srv/wtf-adsb, "
+            "including after following symbolic links"
+        )
     if overlaps_repository(normal):
         raise SetupError(f"{key} must be outside this repository and must not contain it")
     return normal
@@ -361,11 +364,29 @@ def already_secured(info, values):
     return info.st_uid == os.geteuid()
 
 
+def sudo_uid():
+    """The uid of the account that ran sudo, or None when there is none or it was root."""
+    value = os.environ.get("SUDO_UID", "")
+    uid = int(value) if value.isascii() and value.isdigit() else 0
+    return uid or None
+
+
+def check_existing_owner(path, info, values):
+    """Under sudo, refuse an existing directory that belongs to neither uid nor the sudo user."""
+    if os.geteuid() == 0 and info.st_uid not in {values["uid"], sudo_uid()}:
+        raise SetupError(
+            f"{path} already exists and belongs to uid {info.st_uid}, not uid {values['uid']} or the "
+            "account that ran sudo, so configure will not change it. Name a new directory, or create "
+            "it with your own account as the owner."
+        )
+
+
 def make_directory(path, values, known=frozenset()):
     """Create a private directory, or secure an existing one only when that is safe.
 
     An existing directory keeps its mode and owner unless it is empty or holds only
-    the files named in `known`; anything else is refused rather than changed.
+    the files named in `known`; anything else is refused rather than changed. Under
+    sudo, an existing directory must also belong to uid or to the account that ran sudo.
     """
     try:
         try:
@@ -381,6 +402,8 @@ def make_directory(path, values, known=frozenset()):
             raise SetupError(f"{path} must be a real directory, not a file or symbolic link") from None
         try:
             info = os.fstat(descriptor)
+            if not created:
+                check_existing_owner(path, info, values)
             if not created and not already_secured(info, values):
                 unexpected = sorted(set(os.listdir(descriptor)) - known)
                 if unexpected:

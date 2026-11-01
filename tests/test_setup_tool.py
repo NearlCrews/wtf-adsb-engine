@@ -1,6 +1,7 @@
 """The setup tool's plan, configure, check, and deploy dry run work offline."""
 
 import ast
+import contextlib
 import importlib.util
 import json
 import os
@@ -16,6 +17,7 @@ import tomllib
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 from wtf_adsb_engine.runtime import Runtime
 
@@ -264,7 +266,9 @@ class SetupToolTests(unittest.TestCase):
             code, result = run("configure", "--answers", self.answers(url), "--output", str(ROOT.parent))
             self.assertEqual(code, 1)
             self.assertIn("must not contain it", result["error"])
-        for value in ("/srv", "/srv/", "/opt"):
+        top = self.base / "top"
+        top.symlink_to("/")
+        for value in ("/srv", "/srv/", "/opt", str(top / "srv")):
             with self.subTest(value=value):
                 code, result = self.configure(url, state_dir=value)
                 self.assertEqual(code, 1)
@@ -300,6 +304,58 @@ class SetupToolTests(unittest.TestCase):
         code, result = run("configure", "--answers", str(moved), "--output", str(self.output))
         self.assertEqual(code, 0, result)
         self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o700)
+
+    @contextlib.contextmanager
+    def as_root(self, sudo_uid=None):
+        """Pretend configure runs as root, with SUDO_UID set or unset; yield the recorded fchown."""
+        environment = {key: value for key, value in os.environ.items() if key != "SUDO_UID"}
+        if sudo_uid is not None:
+            environment["SUDO_UID"] = str(sudo_uid)
+        with (
+            mock.patch.object(setup_tool.os, "geteuid", return_value=0),
+            mock.patch.dict(os.environ, environment, clear=True),
+            mock.patch.object(setup_tool.os, "fchown") as fchown,
+        ):
+            yield fchown
+
+    def loose_directory(self, name, *contents):
+        path = self.base / name
+        path.mkdir(mode=0o755, parents=True)
+        path.chmod(0o755)
+        for item in contents:
+            (path / item).write_text("keep me\n")
+        return path
+
+    def test_sudo_refuses_an_existing_directory_owned_by_another_account(self):
+        # The directory belongs to the test's own account, while the target uid and the
+        # sudo user are other accounts, as for a root-owned /usr/local/bin or /etc/sudoers.d.
+        owner = os.getuid()
+        values = {"uid": owner + 1, "gid": os.getgid()}
+        refusal = f"belongs to uid {owner}, not uid {owner + 1}"
+        for sudo_uid in (None, 0, owner + 2):
+            for contents in ((), ("README",)):
+                with self.subTest(sudo_uid=sudo_uid, contents=contents):
+                    target = self.loose_directory(f"foreign-{sudo_uid}-{len(contents)}", *contents)
+                    with self.as_root(sudo_uid) as fchown:
+                        with self.assertRaisesRegex(setup_tool.SetupError, refusal):
+                            setup_tool.make_directory(target, values, frozenset(contents))
+                    fchown.assert_not_called()
+                    self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o755)
+
+    def test_sudo_takes_over_only_the_sudo_users_the_target_uids_or_new_directories(self):
+        owner, group = os.getuid(), os.getgid()
+        cases = (
+            ("sudo-user", owner, {"uid": owner + 1, "gid": group}, ("answers.json",)),
+            ("target-uid", None, {"uid": owner, "gid": group}, ()),
+            ("created/state", None, {"uid": owner + 1, "gid": group}, None),
+        )
+        for name, sudo_uid, values, contents in cases:
+            with self.subTest(name=name):
+                target = self.base / name if contents is None else self.loose_directory(name, *contents)
+                with self.as_root(sudo_uid) as fchown:
+                    setup_tool.make_directory(target, values, frozenset(contents or ()))
+                fchown.assert_called_once_with(mock.ANY, values["uid"], group)
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o700)
 
     def test_configure_refuses_a_symlinked_output_directory_or_config_file(self):
         real = self.base / "real-config"

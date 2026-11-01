@@ -17,11 +17,13 @@ provider key file. Compose mounts it read-only at `/config` inside the
 container. `configure` creates it, and the state, feed, and reference
 directories, with mode 0700. When run with `sudo`, it also gives them to `uid`
 and `gid`, and later `check`, `deploy`, and configure runs need `sudo` too.
-Every directory must be at least two levels below `/`, outside this
-repository, and must not contain it. configure changes the mode or owner of an
-existing directory only when it is empty, holds only the files configure
-itself writes or the answers name, or already has mode 0700 and the configured
-owner.
+Every directory must be at least two levels below `/`, even after following
+symbolic links, outside this repository, and must not contain it. configure
+changes the mode or owner of an existing directory only when it is empty, holds
+only the files configure itself writes or the answers name, or already has mode
+0700 and the configured owner. Under `sudo` it also refuses an existing
+directory that belongs to neither `uid` nor the account that ran `sudo`, root's
+included.
 
 The answers file is one JSON object keyed by the names below:
 
