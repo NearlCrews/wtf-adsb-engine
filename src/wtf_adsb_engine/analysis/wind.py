@@ -429,9 +429,12 @@ def _settle(path, event, entry, samples, now, opener, on):
             stale = {
                 key[0] for key, sample in zip(wanted, corrected, strict=True) if key and not sample["wind"]
             }
-            db.executemany(
-                "DELETE FROM wind_cache WHERE lat=? AND lon=? AND day=?", [(*cell, day) for day in stale]
-            )
+            # An empty executemany would still open a deferred transaction, and the
+            # read in _defer would then fail its write instead of waiting for the lock.
+            if stale:
+                db.executemany(
+                    "DELETE FROM wind_cache WHERE lat=? AND lon=? AND day=?", [(*cell, day) for day in stale]
+                )
             attempts = _defer(db, event, now)
             return {"state": "deferred", "id": event["id"], "attempts": attempts}
         changed = db.execute(

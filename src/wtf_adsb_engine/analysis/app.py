@@ -1020,8 +1020,11 @@ class Detector:
             }
             # One aircraft's failure undoes only its own writes; a database error
             # still fails the whole batch. A savepoint needs an open transaction.
+            # The write lock is taken first: a deferred transaction that reads and then
+            # writes cannot wait for another writer, so SQLite would fail the poll at
+            # once instead of waiting within the busy timeout.
             if not db.in_transaction:
-                db.execute("BEGIN")
+                db.execute("BEGIN IMMEDIATE")
             self.aircraft_failures = 0
             for raw in snapshot["aircraft"]:
                 address = str(raw.get("hex", "")).strip().lower() if isinstance(raw, dict) else ""

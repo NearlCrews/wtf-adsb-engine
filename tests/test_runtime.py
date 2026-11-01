@@ -620,6 +620,178 @@ class RuntimeTests(unittest.TestCase):
             finally:
                 service.close()
 
+    def test_collector_waits_for_a_concurrent_journal_writer(self):
+        # A deferred transaction that reads before it writes cannot wait for another
+        # writer: SQLite fails the upgrade at once. The collector must take the write
+        # lock first and wait within the busy timeout like any other writer.
+        from wtf_adsb_engine.analysis import app
+        from wtf_adsb_engine.analysis.native import NativeCollector
+
+        lines = (ROOT / "examples/receiver.synthetic.ndjson").read_text().splitlines()
+        snapshots = [json.loads(line) for line in lines[:2]]
+        collector = NativeCollector(self.root / "journal.sqlite3")
+        collector.process(snapshots[0], wall_now=snapshots[0]["now"])
+        # A settled rarity baseline writes nothing at the start of the next poll.
+        collector.detector.next_rarity = float("inf")
+        holding, released = threading.Event(), []
+
+        def hold_write_lock():
+            with app.connect(collector.path) as db:
+                db.execute("BEGIN IMMEDIATE")
+                app.put_meta(db, "concurrent_writer", 1)
+                holding.set()
+                time.sleep(0.3)
+                released.append(time.monotonic())
+
+        writer = threading.Thread(target=hold_write_lock)
+        writer.start()
+        try:
+            self.assertTrue(holding.wait(3))
+            collector.process(snapshots[1], wall_now=snapshots[1]["now"])
+        finally:
+            writer.join()
+        self.assertEqual(collector.detector.last_poll, snapshots[1]["now"])
+        self.assertTrue(released)
+
+    def receiver_fixture(self, bound):
+        """A receiver service whose input returns a fresh two-aircraft snapshot each poll."""
+        service = ReceiverService(
+            {"url": "http://127.0.0.1/fixture", "poll_seconds": 60, "collection_wait_seconds": bound}
+        )
+        messages = iter(range(100, 10**6))
+        fetched = []
+
+        def poll(checkpoint, current):
+            count = next(messages)
+            aircraft = [
+                {
+                    "hex": address,
+                    "seen": 0,
+                    "seen_pos": 0,
+                    "lat": 40 + count / 10000,
+                    "lon": -100,
+                    "alt_baro": 5000,
+                    "gs": 80,
+                    "messages": count,
+                    "r": "N1",
+                    "t": "C172",
+                    "type": "adsb_icao",
+                }
+                for address in ("a00001", "a00002")
+            ]
+            fetched.append(time.monotonic())
+            return InputBatch(
+                ({"snapshot": {"now": current.now, "aircraft": aircraft}},), current.now, current.now
+            )
+
+        return service, poll, fetched
+
+    def test_collection_skips_an_attempt_while_enrichment_holds_the_journal(self):
+        bound = 0.2
+        service, poll, _ = self.receiver_fixture(bound)
+        context = Context("receiver", self.root, "fixture", time.time())
+        with (
+            patch.object(service.input, "poll", side_effect=poll),
+            patch("wtf_adsb_engine.analysis.native.NativeCollector.enrich"),
+        ):
+            try:
+                service.initialize(context)
+                committed, attempted = service.collector.detector.last_poll, service.last_attempt
+                with service.journal, self.assertLogs("wtf_adsb_engine.builtins.receiver", "INFO") as logged:
+                    for _ in range(2):
+                        started = time.monotonic()
+                        service._collect()
+                        self.assertLess(time.monotonic() - started, bound + 0.15)
+                # Skips are logged once per run, and are neither failures nor attempts.
+                self.assertEqual(
+                    [(record.levelname, record.getMessage()) for record in logged.records],
+                    [("INFO", "Receiver collection skipped while enrichment holds the journal")],
+                )
+                self.assertEqual(service.collector.detector.last_poll, committed)
+                self.assertEqual(service.last_attempt, attempted)
+                self.assertIsNone(service.failure)
+                health = service.health()
+                self.assertEqual((health["state"], health["skipped_collections"]), ("ready", 2))
+                # The next poll after enrichment releases the journal commits again.
+                time.sleep(0.01)
+                service._collect()
+                self.assertGreater(service.collector.detector.last_poll, committed)
+                self.assertFalse(service.skipping)
+            finally:
+                service.close()
+
+    def test_collection_and_enrichment_take_turns_on_one_journal(self):
+        from wtf_adsb_engine.analysis import app
+
+        bound = 0.2
+        service, poll, fetched = self.receiver_fixture(bound)
+        context = Context("receiver", self.root, "fixture", time.time())
+        passes, errors = [], []
+
+        def enrich(collector, now, **ignored):
+            # A short write transaction like the providers' own, and on every fourth
+            # pass a network request longer than the collection bound.
+            passes.append(now)
+            try:
+                with app.connect(collector.path) as db:
+                    app.put_meta(db, "test_enrichment", now)
+                    db.execute("UPDATE coverage SET polls=polls")
+                    time.sleep(0.02)
+            except sqlite3.Error as error:
+                errors.append(error)
+                raise
+            if len(passes) % 4 == 0:
+                time.sleep(bound * 2.5)
+
+        processed = []
+        stop = threading.Event()
+
+        def drive_enrichment():
+            while not stop.is_set():
+                service._enrich()
+                errors.extend([service.enrichment_error] if service.enrichment_error else [])
+                time.sleep(0.01)
+
+        with (
+            patch.object(service.input, "poll", side_effect=poll),
+            patch("wtf_adsb_engine.analysis.native.NativeCollector.enrich", enrich),
+        ):
+            try:
+                service.initialize(context)
+                # As in a settled journal, a poll writes nothing before its aircraft.
+                service.collector.detector.next_rarity = float("inf")
+                process = service.collector.process
+
+                def timed_process(snapshot, wall_now=None):
+                    processed.append((fetched[-1], time.monotonic()))
+                    return process(snapshot, wall_now=wall_now)
+
+                service.collector.process = timed_process
+                enrichment = threading.Thread(target=drive_enrichment)
+                enrichment.start()
+                try:
+                    for _ in range(40):
+                        started = time.monotonic()
+                        service._collect()
+                        waited = time.monotonic() - started
+                        self.assertIsNone(service.failure)
+                        if not processed or processed[-1][0] < started:
+                            # Skipped: the whole attempt stayed within the bound.
+                            self.assertLess(waited, bound + 0.15)
+                        time.sleep(0.02)
+                finally:
+                    stop.set()
+                    enrichment.join(timeout=5)
+            finally:
+                service.close()
+        self.assertEqual(errors, [])
+        self.assertGreater(len(passes), 4)
+        # Each committed attempt started processing within the bound of its fetch.
+        self.assertTrue(all(begun - fetch < bound + 0.15 for fetch, begun in processed))
+        self.assertGreater(len(processed), 5)
+        self.assertGreater(service.skipped, 0)
+        self.assertEqual(service.health()["skipped_collections"], service.skipped)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,10 @@
 This compatibility plugin wraps the existing stateful detector. Third-party
 inputs can use the ordinary normalized snapshot protocol instead. Collection
 and enrichment use their own durable journal, never the core outbox connection.
+
+Collection and enrichment take turns on that journal. An enrichment pass waits
+for a collection attempt to finish; a collection attempt waits at most
+``collection_wait_seconds`` for an enrichment pass and otherwise skips that poll.
 """
 
 import logging
@@ -24,6 +28,7 @@ class ReceiverService(Lifecycle):
             {
                 **ReceiverInput.spec.config_schema["properties"],
                 "poll_seconds": {"type": "number", "minimum": 1, "maximum": 60},
+                "collection_wait_seconds": {"type": "number", "minimum": 0, "maximum": 10},
                 "type_registry": {"type": "boolean"},
                 "wind": {"type": "boolean"},
                 "flightaware": {"type": "boolean"},
@@ -55,6 +60,12 @@ class ReceiverService(Lifecycle):
         self.enrichment_error = None
         self.collector = None
         self.last_attempt = None
+        # Held by one collection attempt or one enrichment pass at a time.
+        self.journal = threading.Lock()
+        # Collection attempts skipped because enrichment held the journal, and
+        # whether the latest attempt was one of them.
+        self.skipped = 0
+        self.skipping = False
 
     def initialize(self, context):
         from ..analysis.flightaware import Settings, money
@@ -83,12 +94,32 @@ class ReceiverService(Lifecycle):
             worker.start()
 
     def _collect(self):
+        """Fetch one receiver snapshot, then commit it unless enrichment holds the journal.
+
+        The fetch runs outside the journal lock. An enrichment pass can hold the
+        lock over its network requests, so collection waits for it at most
+        collection_wait_seconds. Past that the attempt is skipped: it is not a
+        failure and does not count as an attempt for liveness, and the next poll
+        tries again with a fresh snapshot.
+        """
         from ..analysis.app import CollectorFault
 
+        attempted = True
         try:
             now = time.time()
             batch = self.input.poll(None, replace(self.context, now=now))
-            self.collector.process(batch.records[0]["snapshot"], wall_now=now)
+            if not self.journal.acquire(timeout=self.settings.get("collection_wait_seconds", 3)):
+                attempted = False
+                self.skipped += 1
+                if not self.skipping:
+                    LOG.info("Receiver collection skipped while enrichment holds the journal")
+                self.skipping = True
+                return
+            self.skipping = False
+            try:
+                self.collector.process(batch.records[0]["snapshot"], wall_now=now)
+            finally:
+                self.journal.release()
             if self.failure:
                 LOG.warning("Receiver collection recovered after %s", self.failure[0])
             self.failure = None
@@ -99,19 +130,25 @@ class ReceiverService(Lifecycle):
                 LOG.warning("Receiver collection attempt failed (%s)", failure[0])
             self.failure = failure
         finally:
-            self.last_attempt = time.time()
+            if attempted:
+                self.last_attempt = time.time()
 
     def _collect_loop(self):
         while not self.stop.wait(self.settings.get("poll_seconds", 10)):
             self._collect()
 
-    def _enrich_loop(self):
-        while not self.stop.is_set():
+    def _enrich(self):
+        """One enrichment pass; it waits until no collection attempt holds the journal."""
+        with self.journal:
             try:
                 self.collector.enrich(time.time())
                 self.enrichment_error = None
             except Exception as error:
                 self.enrichment_error = type(error).__name__
+
+    def _enrich_loop(self):
+        while not self.stop.is_set():
+            self._enrich()
             self.stop.wait(5)
 
     @property
@@ -154,6 +191,7 @@ class ReceiverService(Lifecycle):
             "state": state,
             "collection_error": failure[0] if failure else None,
             "enrichment_error": self.enrichment_error,
+            "skipped_collections": self.skipped,
         }
 
     def close(self):

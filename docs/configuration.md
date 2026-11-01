@@ -50,7 +50,7 @@ configuration outside the checkout. External plugins define their own path rules
 
 | Plugin | Options and behavior |
 | --- | --- |
-| `wtf_adsb.receiver_service` | Required `url`; optional `poll_seconds` (default 10, range 1 to 60), `timeout_seconds` (default 10, greater than 0 and at most 60), `max_age_seconds` (default 120, range 1 to 3600), `type_registry` and `wind` (both false). Collects continuously into a private journal while export runs separately. |
+| `wtf_adsb.receiver_service` | Required `url`; optional `poll_seconds` (default 10, range 1 to 60), `collection_wait_seconds` (default 3, range 0 to 10: how long a collection attempt waits for an enrichment pass before it skips that poll), `timeout_seconds` (default 10, greater than 0 and at most 60), `max_age_seconds` (default 120, range 1 to 3600), `type_registry` and `wind` (both false). Collects continuously into a private journal while export runs separately. |
 | `wtf_adsb.receiver_json` | Required `url`; the same HTTP timeout and age options. Fetches one snapshot per pipeline pass. |
 | `wtf_adsb.json_replay` | Required `path`; `records_per_poll` defaults to 100 and allows 1 to 1000. Accepts one receiver JSON snapshot per line with strictly increasing `now` timestamps. |
 | `wtf_adsb.journal` | Required `path`; `mode` is `live` by default or `replay`. Reads a compatible analysis journal without modifying it. This is not an arbitrary SQLite input. |
