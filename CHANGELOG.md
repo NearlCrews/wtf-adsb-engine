@@ -90,6 +90,10 @@ initial development version and does not announce a published release.
   start come from the findings selection keeps, as the original application's
   publisher reads them, and an absorbed finding still travels in its
   encounter's group. Groups with absorbed findings get one new revision.
+- The Compose template gives the engine and viewer a 512 MiB `/tmp` tmpfs
+  instead of 64 MiB. SQLite sorts the retained journal in temporary files there,
+  and a full journal failed every collection pass with "database or disk is
+  full".
 
 ### Known limits
 

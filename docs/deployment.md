@@ -84,6 +84,13 @@ for the engine and viewer. The viewer needs writable access to the native
 journal for explicit operator feedback, while a saved-writing archive has its
 own read-only mount.
 
+Both services give `/tmp` a 512 MiB tmpfs because the root filesystem is
+read-only and SQLite writes its temporary sort files there when it orders the
+retained journal (collection export and the viewer's selection views). With
+64 MiB a full journal fails with "database or disk is full". Tmpfs pages count
+toward the container's memory limit; to keep them out of memory, set
+`SQLITE_TMPDIR` to a directory on the state volume instead.
+
 ```sh
 docker compose -f deploy/compose.yaml config --quiet
 docker compose -f deploy/compose.yaml up -d

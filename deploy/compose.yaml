@@ -9,7 +9,7 @@ services:
     stop_grace_period: ${ENGINE_STOP_GRACE:-600s}
     mem_limit: ${ENGINE_MEMORY_LIMIT:-2g}
     tmpfs:
-      - /tmp:size=64m,mode=1777
+      - /tmp:size=512m,mode=1777
     volumes:
       - ${ENGINE_CONFIG_DIR:?Set ENGINE_CONFIG_DIR}:/config:ro
       - ${ENGINE_STATE_DIR:?Set ENGINE_STATE_DIR}:/state
@@ -34,7 +34,7 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: ${VIEWER_MEMORY_LIMIT:-512m}
     tmpfs:
-      - /tmp:size=64m,mode=1777
+      - /tmp:size=512m,mode=1777
     volumes:
       - ${ENGINE_CONFIG_DIR:?Set ENGINE_CONFIG_DIR}:/config:ro
       - ${ENGINE_STATE_DIR:?Set ENGINE_STATE_DIR}:/state
