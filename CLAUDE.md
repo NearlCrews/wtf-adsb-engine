@@ -3,8 +3,8 @@
 This file is for an AI assistant that a user has opened in this repository.
 When the user asks you to set the engine up, follow this protocol. It
 configures the Docker Compose deployment in `deploy/compose.yaml`, checks it,
-and starts it. `CLAUDE.md` holds the same text for harnesses that read that
-name.
+and starts it. AGENTS.md and CLAUDE.md hold the same text, for harnesses that
+read either name.
 
 ## Setup protocol
 
@@ -23,8 +23,11 @@ name.
    default and accept "defaults" as an answer. Validate each answer against
    the rule in the document and ask again when one fails. Tell the user that
    the Receiver and Providers answers and `source_instance` stay fixed for the
-   life of the state directory; `uid`, `gid`, and the Runtime answers can
-   change later.
+   life of the state directory, and that the Runtime answers can change later.
+   Changing `uid` or `gid` later means stopping the stack, running
+   `sudo chown -R NEWUID:NEWGID` on the state, feed, and reference directories
+   (and `sudo chown NEWUID` on any provider key file), then rerunning
+   configure with `sudo`.
 5. For a provider key, ask only for the path of a key file the user has
    already created. Never ask for, accept, or repeat the key itself. If the
    user pastes a key, tell them not to, do not store or echo it, and ask them
@@ -35,43 +38,56 @@ name.
    `sudo install -d -m 0755 -o "$(id -u)" -g "$(id -g)" /srv/wtf-adsb` first.
 7. Run `python3 tools/setup.py configure --answers DIR/answers.json --output DIR`,
    where `DIR` is the private directory. If `uid` and `gid` differ from the
-   user's own account, run it with `sudo` so it can give the directories to
-   them. Read every warning in the result to the user.
+   user's own account, run it with `sudo` so it can give the state, feed, and
+   reference directories to them. Read every warning in the result to the user.
 8. Run `python3 tools/setup.py check --output DIR`. Fix each failed check with
    the user, then run check again until `ok` is true.
 9. Run `python3 tools/setup.py deploy --output DIR`. It starts the services
    and waits up to 120 seconds for the engine's health command.
 
-   If configure ran with `sudo`, `DIR` now belongs to `uid` with mode 0700,
-   and the user's account can no longer read it. Run check and deploy with
-   `sudo` as well, and use `sudo` to edit `DIR/answers.json` and rerun
-   configure when an answer changes later. A result that says "rerun with
-   sudo" means this step was missed.
+   If configure ran with `sudo`, `DIR` stays with the user's account, with
+   group `gid` and mode 0750. `receiver.toml` and `.env` get mode 0640, so the
+   container can read them through its group but cannot change them, and
+   `setup.json` and `answers.json` get mode 0600. Only the state, feed, and
+   reference directories belong to `uid`. The user can still edit
+   `DIR/answers.json` without `sudo`, but run configure, check, and deploy
+   with `sudo`. A result that says "rerun with sudo" means this step was
+   missed.
 10. Report the health JSON from deploy to the user. Explain that readiness can
     take several minutes longer, because the first export must finish.
 
 Every subcommand prints one JSON object and exits nonzero on failure. Rerunning
 configure with the same answers changes nothing. configure refuses to take over
-an existing directory that holds other files unless it already has mode 0700
-and the configured owner. Under `sudo` it also refuses an existing directory
-that belongs to neither `uid` nor the user's account. `deploy --print-only`
-shows the Compose commands without running them. When `viewer` is false, deploy starts only the engine
-and stops and removes a viewer left from an earlier deploy.
+an existing directory that holds other files unless it already has the mode
+and owner configure would give it: 0750 for the configuration directory and
+0700 for the others. Under `sudo` it also refuses an existing directory
+that belongs to neither `uid` nor the user's account, and any path with a
+parent that belongs to another account or that group or others can write
+(a root-owned sticky directory such as `/tmp` is allowed). check and deploy
+refuse when the configuration directory, `.env`, or `setup.json` belongs to
+any account other than root or the user's own, which includes `uid` when it
+is a separate account, or when group or others can write it. deploy writes
+`.env` again from the validated `setup.json` before Compose reads it. `deploy --print-only` shows the Compose commands without
+running them. When `viewer` is false, deploy starts only the engine and
+stops and removes a viewer left from an earlier deploy.
 
 ## Upkeep to tell the user
 
-In these commands, `DIR` is the private directory.
+In these commands, `DIR` is the private directory. If configure ran with
+`sudo`, run the health and backup commands with `sudo` too.
 
 - Upgrade: update the checkout, then rebuild with `make image` or pull the
   published tag named in `image`. Run configure, check, and deploy again;
   deploy reruns `docker compose up -d`. The state and feed directories carry
   over.
 - Health: `docker compose --env-file DIR/.env -f deploy/compose.yaml exec -T engine wtf-adsb-engine health --config /config/receiver.toml --readiness`
-- Backup: stop the engine with `docker compose --env-file DIR/.env -f deploy/compose.yaml stop`,
+- Backup: stop the stack with `docker compose --env-file DIR/.env -f deploy/compose.yaml stop`,
   copy the state, configuration, reference, and feed directories with their
   permissions into a private backup location, then start it again with
-  `up -d`. The state directory holds the receiver journal and the delivery
-  outbox. See [operations](docs/operations.md#state-backups-and-upgrades).
+  `python3 tools/setup.py deploy --output DIR`. A plain `up -d` would also
+  start the viewer when `viewer` is false. The state directory holds the
+  receiver journal and the delivery outbox. See
+  [operations](docs/operations.md#state-backups-and-upgrades).
 
 ## Never do these
 

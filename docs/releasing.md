@@ -7,14 +7,24 @@ package is uploaded to a package registry.
 ## Repository setup
 
 Before the first public push, choose the canonical GitHub repository and
-replace the `OWNER` placeholder in the `Homepage`, `Source`, `Issues`, and
-`Changelog` entries of the `[project.urls]` table in `pyproject.toml` with its
-owner. Do the same for the `ghcr.io/OWNER/wtf-adsb-engine` image name in the
-README and in this guide. The `Example deployment` entry links to wtf-adsb.com
-and needs no change. Configure a private security-reporting channel and a private conduct
-contact; keep [SECURITY.md](../SECURITY.md) and
+replace the `OWNER` placeholder with its owner in the `Homepage`, `Source`,
+`Issues`, and `Changelog` entries of the `[project.urls]` table in
+`pyproject.toml`, in the `ghcr.io/OWNER/wtf-adsb-engine` image name in the
+README and in this guide, and in the publisher repository link in
+[CONTRIBUTING.md](../CONTRIBUTING.md). The `Example deployment` entry links to
+wtf-adsb.com and needs no change. That list can go stale, so treat this command
+as the authoritative check; afterwards it should show only this guide's own
+mentions of the placeholder:
+
+```sh
+git grep -nw OWNER
+```
+
+Configure a private security-reporting channel and a private conduct contact;
+keep [SECURITY.md](../SECURITY.md) and
 [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) accurate. GitHub private
-vulnerability reporting requires a repository setting, not just a file.
+vulnerability reporting is a repository setting that must be turned on
+separately from SECURITY.md.
 
 Enable the check and release workflows and review dependency update pull requests. Require
 successful checks on the default branch when the repository's settings support

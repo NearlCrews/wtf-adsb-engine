@@ -136,7 +136,7 @@ BEST_WINDOW_KINDS = kinds.where(best_window=True)
 # Rows saved before a circle or survey grid verified that it then covers.
 ABSORBED_KINDS = kinds.table("absorbs")
 # Type-envelope and rated-limit readings need rules.MIN_REPORTS coherent reports
-# over rules.MIN_REPORT_SECONDS (the owner publishes no one-report stories); the
+# over rules.MIN_REPORT_SECONDS, so no finding rests on a single report; the
 # numeric spotting kinds need four over 30 s.
 NUMERIC_REPORTS = 4
 NUMERIC_SECONDS = 30

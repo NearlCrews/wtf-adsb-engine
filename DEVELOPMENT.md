@@ -62,6 +62,21 @@ evidence creates no new revision. Inspect `state/export/manifest.json` to find
 the delivered batch files. Warnings about three omitted reference bundles are
 expected; see [reference data and coverage](docs/reference-data.md).
 
+## Run without Docker
+
+After the base install, keep a private configuration under `state/`:
+
+```sh
+install -d -m 0700 state
+cp examples/receiver.toml state/receiver.toml
+chmod 0600 state/receiver.toml
+```
+
+Set the `url` in `state/receiver.toml`, then run
+`.venv/bin/wtf-adsb-engine check --config state/receiver.toml` and
+`.venv/bin/wtf-adsb-engine run --config state/receiver.toml`. Use your service
+manager to keep it running.
+
 ## Build and check the image
 
 The Linux/amd64 image builds directly from a clean checkout with Docker and GNU
@@ -76,7 +91,9 @@ docker run --rm --network none wtf-adsb-engine:local --version
 The first build downloads pinned base images and locked dependencies. No host
 Python installation or prebuilt wheel is required. `make test-image` checks the
 actual image, graceful restart, and an independently installed plugin. It runs
-offline after the build has fetched dependencies. Images are built locally.
+offline after the build has fetched dependencies. The check workflow builds the
+image locally and publishes nothing; tagged releases publish it to the GitHub
+Container Registry (see [release maintenance](docs/releasing.md)).
 
 The [deployment guide](docs/deployment.md) covers builder images, build and
 package inventories, persistent mounts, live collection, viewer configuration,
@@ -104,6 +121,15 @@ integration test. The [plugin architecture](docs/plugin-architecture.md)
 documents the synchronous SDK and its limits. Plugins are trusted Python code
 with the engine process's permissions; the SDK is not a security sandbox.
 
+## Where the data goes
+
+The feed directory holds `manifest.json` and immutable JSON batches in the
+`wtf-adsb.collection.v1` format. Give consumers read-only access and have them
+deduplicate, because delivery is at least once. The feed leaves out receiver
+coordinates, receiver-relative range and bearing, private paths, and
+hostnames, but aircraft tracks can still suggest the general reception area.
+Keep the feed private. See the [evidence format](docs/evidence-format.md).
+
 ## Evidence and delivery
 
 The implemented interface is `wtf-adsb.collection.v1`, contract version `1.1.0`
@@ -119,11 +145,6 @@ assigns stable IDs and revisions, persists batch envelopes and delivery bytes,
 and keeps a separate cursor for each output. The file sink writes batches before
 atomically replacing their manifest. Delivery is at least once, so consumers
 must deduplicate.
-
-Receiver coordinates, receiver-relative range and bearing, private paths, and
-hostnames are excluded from the export profile. Aircraft tracks can still reveal
-a general reception region. Keep the feed private and mount it read-only for the
-consumer.
 
 ## Rules for changes
 

@@ -14,10 +14,8 @@ accept evidence contract 1.0.0 and 1.1.0 and refuse other versions by name.
 ### Added
 
 - Receiver JSON collection, continuous collection, immutable NDJSON replay, and
-  a read-only adapter for compatible analysis journals. The continuous receiver
-  input judges availability by the age of its last committed snapshot, so a
-  failed collection attempt leaves readiness intact while that snapshot is at
-  most `max_age_seconds` old; a collector fault fails the next pass at once.
+  a read-only adapter for compatible analysis journals, with readiness based on
+  the age of the last committed snapshot.
 - Installed-package plugin interfaces (SDK API version 1) for inputs, detectors,
   reference providers, enrichment, JSON formatting, and delivery destinations.
   Detector-supplied extensions pass the same schema approval and payload
@@ -28,27 +26,34 @@ accept evidence contract 1.0.0 and 1.1.0 and refuse other versions by name.
   each seasonal speed record or type speed mismatch, its type's usual ground
   speed in these records, or null. A finding's norm is frozen once its group is
   quiet, so the moving sample window issues no new revisions. The
-  `wtf-adsb.collection.v1` profile is unchanged from 1.0.0.
+  `wtf-adsb.collection.v1` profile is unchanged from 1.0.0. For integrators:
+  delivery is at least once, so deduplicate on each batch's sequence range, and
+  mount the feed read-only.
 - Output workers that retry transient database failures without losing their
   cursor or the artifact bytes they have saved.
 - Schema and privacy validation, reviewed extension schemas, and an external
   enrichment plugin example.
-- Private factual viewer and feedback, with a separate immutable saved-writing
-  archive; installed static assets and preserved monitoring endpoints.
-- Verified native journal migration, interrupted-transfer startup holds,
-  independent process liveness and feed readiness checks.
+- A private factual viewer on port 8080 that accepts operator feedback and
+  has health and metrics endpoints.
+- An optional read-only archive view of AI-written notes kept by an earlier
+  collector.
+- A migration command that copies a compatible journal and refuses to start
+  on an interrupted copy.
+- Separate process liveness and feed readiness checks.
 - Self-contained Linux/amd64 container builds from locked source on Python
   3.14.9, including archive tools, an unprivileged account, and build and
   package inventories. Tagged releases publish the image to the GitHub
   Container Registry and attach the inventories to the GitHub release.
-- Compose templates, which give the engine and viewer a 512 MiB `/tmp` tmpfs
-  for SQLite's temporary files, opt-in private FlightAware and fleet-reference
-  configuration, and `tools/setup.py`, which writes the configuration from an
-  interview's answers, checks it, and starts the services.
+- Compose templates that give the engine and viewer a 512 MiB `/tmp` tmpfs for
+  SQLite's temporary files.
+- Opt-in private FlightAware and fleet-reference configuration.
+- `tools/setup.py`, which writes the configuration from an interview's
+  answers, checks it, and starts the services. Under `sudo` it keeps the
+  configuration with the operator, so the container account cannot change
+  what root reads.
 - Private archive freezing, pinned replay, metrics analysis, and compact replay
   importing into journal backups.
-- MIT licensing, public documentation, contributor guidance, and source and
-  wheel builds.
+- Source and wheel builds under the MIT license.
 
 ### Known limits
 

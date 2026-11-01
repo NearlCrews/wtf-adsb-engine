@@ -32,6 +32,20 @@ The source links and recorded terms are in the repository's
 `docs/dependency-audit-2026-10-08.md`. Keep those notices with any supplied data
 or derived output that requires them.
 
+## Online providers
+
+Each optional provider is off by default. When it is on, its responses can enter
+the journal and, through findings and context, the feed. The operator who turns
+a provider on accepts that provider's terms for the deployment and for any feed
+consumer that receives its data.
+
+| Provider | Setting | Terms |
+| --- | --- | --- |
+| [adsbdb.com](https://www.adsbdb.com) | `type_registry` | Aircraft type registry lookups, under the service's own terms. |
+| [hexdb.io](https://hexdb.io) | `type_registry` | Aircraft type registry lookups, under the service's own terms. |
+| [Open-Meteo](https://open-meteo.com) | `wind` | Responses are licensed under CC BY 4.0 and need attribution. The [service terms](https://open-meteo.com/en/terms) separate free noncommercial access from commercial API access. |
+| [FlightAware AeroAPI](https://www.flightaware.com/commercial/aeroapi/) | `flightaware` | A paid service billed to the operator's account. Its terms limit redistribution of responses. |
+
 Installed dependencies carry their own license files. Their licenses and the
 locked dependency versions are recorded in the dependency audit and `uv.lock`.
 Review source attribution and notices when preparing each public release.

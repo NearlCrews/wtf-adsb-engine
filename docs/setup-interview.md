@@ -12,18 +12,36 @@ prints the same questions as JSON.
 
 The user names one private directory outside this repository, such as
 `/srv/wtf-adsb/config`. It becomes the configuration directory. It holds the
-answers file, the generated `receiver.toml`, `.env`, and `setup.json`, and any
-provider key file. Compose mounts it read-only at `/config` inside the
-container. `configure` creates it, and the state, feed, and reference
-directories, with mode 0700. When run with `sudo`, it also gives them to `uid`
-and `gid`, and later `check`, `deploy`, and configure runs need `sudo` too.
+answers file, `receiver.toml`, `.env`, `setup.json`, and any provider key file.
+Compose mounts it read-only at `/config` inside the container.
+
+`configure` creates the configuration directory with mode 0750 and the state,
+feed, and reference directories with mode 0700. It writes `receiver.toml` and
+`.env` with mode 0640 and `setup.json` with mode 0600, and gives an answers
+file kept in the configuration directory mode 0600. When run with `sudo`, it
+gives the state, feed, and reference directories and the reference tables to
+`uid` and `gid`. The configuration directory and its files stay with the
+account that ran `sudo` (root when there is none), with group `gid`, so the
+container can read `receiver.toml` but cannot change anything root reads
+later. Under `sudo` the answers file must belong to root or to the account
+that ran `sudo`. After a `sudo` configure, run `check`, `deploy`, and later
+configure runs with `sudo` too.
+
 Every directory must be at least two levels below `/`, even after following
 symbolic links, outside this repository, and must not contain it. configure
 changes the mode or owner of an existing directory only when it is empty, holds
-only the files configure itself writes or the answers name, or already has mode
-0700 and the configured owner. Under `sudo` it also refuses an existing
-directory that belongs to neither `uid` nor the account that ran `sudo`, root's
-included.
+only the files configure itself writes or the answers name, or already has the
+mode and owner configure would give it. Under `sudo` it also refuses an
+existing directory that belongs to neither `uid` nor the account that ran
+`sudo`, root's included, and a directory with a parent that belongs to another
+account or that group or others can write. A root-owned sticky directory such
+as `/tmp` is allowed as a parent.
+
+`check` and `deploy` refuse when the configuration directory, `.env`, or
+`setup.json` belongs to an account other than root, the account running the
+tool, or the account that ran `sudo`, or when group or others can write it. A
+separate `uid` account therefore cannot change what root reads. `deploy`
+writes `.env` again from the validated `setup.json` before Compose reads it.
 
 The answers file is one JSON object keyed by the names below:
 
@@ -39,10 +57,14 @@ The answers file is one JSON object keyed by the names below:
 ```
 
 The engine keeps its receiver input options, outputs, and `source_instance`
-for the life of the state directory. It refuses to start if they change later.
-Settle the Receiver and Providers answers and `source_instance` before the
-first start; `uid`, `gid`, and the Runtime answers can change later.
-`configure` refuses such a change once state exists.
+for the life of the state directory. It refuses to start if they change later,
+and `configure` refuses to change them once state exists. Settle the Receiver
+and Providers answers and `source_instance` before the first start.
+
+The Runtime answers can change at any time. To change `uid` or `gid`, stop the
+stack, run `sudo chown -R NEWUID:NEWGID` on the state, feed, and reference
+directories and `sudo chown NEWUID` on any provider key file, then rerun
+configure with `sudo`. configure regroups the configuration directory itself.
 
 ## Receiver
 
@@ -80,8 +102,8 @@ Every provider is off by default. Turn one on only when the user asks for it.
 | Key | Type | Default | Validation | Why |
 | --- | --- | --- | --- | --- |
 | `source_instance` | string | `receiver` | A lowercase letter, then up to 63 lowercase letters, digits, `_`, or `-`. | Names this collector in every batch so consumers can tell sources apart. |
-| `uid` | integer | `1000` | 1 to 65534. | The container runs as this user, and it must own the directories. `id -u` shows the user's own number. |
-| `gid` | integer | `1000` | 1 to 65534. | The container's group, which must also own the directories. |
+| `uid` | integer | `1000` | 1 to 65534. | The container runs as this user, which owns the state, feed, and reference directories. `id -u` shows the user's own number. |
+| `gid` | integer | `1000` | 1 to 65534. | The container's group. It owns the state, feed, and reference directories, and through it the container reads the configuration directory. |
 
 ## Runtime
 

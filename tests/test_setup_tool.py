@@ -70,6 +70,66 @@ class Receiver(BaseHTTPRequestHandler):
         pass
 
 
+class StaticTests(unittest.TestCase):
+    """Tests that write nothing, so they also run as root."""
+
+    def test_tool_parses_on_the_oldest_supported_host_python(self):
+        ast.parse(SCRIPT.read_text(), feature_version=(3, 11))
+
+    def test_plan_lists_every_key_in_the_interview_document(self):
+        code, result = run("plan")
+        self.assertEqual(code, 0)
+        planned = [
+            (group["name"], question["key"], question["type"], question["default"])
+            for group in result["groups"]
+            for question in group["questions"]
+        ]
+        self.assertEqual(planned, list(document_rows()))
+        self.assertTrue(all(q["validation"] and q["why"] for g in result["groups"] for q in g["questions"]))
+
+    def test_plan_and_interview_list_the_same_configuration_files(self):
+        files = "answers file, receiver.toml, .env, setup.json, and any provider key file"
+        self.assertIn(files, setup_tool.plan()["configuration_directory"])
+        self.assertIn(files, " ".join(INTERVIEW.read_text().replace("`", "").split()))
+        self.assertIn("chown -R", setup_tool.plan()["fixed_answers"])
+
+    def test_usage_errors_print_one_json_object_and_exit_2(self):
+        output = "/srv/wtf-adsb/config"  # never opened: argument parsing fails first
+        for args in (
+            ("deploy",),
+            ("deploy", "--output", output, "--timeout", "0"),
+            ("deploy", "--output", output, "--timeout", "-5"),
+            ("deploy", "--output", output, "--timeout", "nan"),
+            ("deploy", "--output", output, "--timeout", "inf"),
+            ("deploy", "--output", output, "--timeout", "soon"),
+        ):
+            with self.subTest(args=args):
+                code, result = run(*args)
+                self.assertEqual(code, 2)
+                self.assertFalse(result["ok"])
+                self.assertTrue(result["error"].startswith("usage: "), result)
+
+    def test_probe_reports_a_malformed_http_response(self):
+        listener = socket.create_server(("127.0.0.1", 0))
+        self.addCleanup(listener.close)
+
+        def answer():
+            connection, _ = listener.accept()
+            with connection:
+                connection.recv(65536)
+                connection.sendall(b"not an HTTP status line\r\n\r\n")
+
+        thread = threading.Thread(target=answer, daemon=True)
+        thread.start()
+        result = setup_tool.probe(f"http://127.0.0.1:{listener.getsockname()[1]}/aircraft.json")
+        thread.join(5)
+        self.assertEqual(result, {"ok": False, "error": "BadStatusLine"})
+
+    def test_agents_and_claude_instructions_are_identical(self):
+        self.assertEqual((ROOT / "AGENTS.md").read_bytes(), (ROOT / "CLAUDE.md").read_bytes())
+
+
+@unittest.skipIf(os.geteuid() == 0, "configure and check expect an unprivileged account")
 class SetupToolTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="wtf-setup-")
@@ -100,20 +160,6 @@ class SetupToolTests(unittest.TestCase):
     def configure(self, url="http://192.0.2.10:8080/data/aircraft.json", **extra):
         return run("configure", "--answers", self.answers(url, **extra), "--output", str(self.output))
 
-    def test_tool_parses_on_the_oldest_supported_host_python(self):
-        ast.parse(SCRIPT.read_text(), feature_version=(3, 11))
-
-    def test_plan_lists_every_key_in_the_interview_document(self):
-        code, result = run("plan")
-        self.assertEqual(code, 0)
-        planned = [
-            (group["name"], question["key"], question["type"], question["default"])
-            for group in result["groups"]
-            for question in group["questions"]
-        ]
-        self.assertEqual(planned, list(document_rows()))
-        self.assertTrue(all(q["validation"] and q["why"] for g in result["groups"] for q in g["questions"]))
-
     def test_configure_writes_private_files_the_engine_accepts(self):
         code, result = self.configure(flightaware=True, flightaware_key_file=str(self.output / "fa.key"))
         self.assertEqual(code, 0, result)
@@ -129,10 +175,10 @@ class SetupToolTests(unittest.TestCase):
         )
         runtime = Runtime(config)
         self.assertEqual((len(runtime.pipelines), len(runtime.outputs)), (1, 1))
-        for name in ("receiver.toml", ".env", "setup.json"):
-            self.assertEqual(stat.S_IMODE((self.output / name).stat().st_mode), 0o600, name)
-        for name in ("config", "state", "feed", "references"):
-            self.assertEqual(stat.S_IMODE((self.base / name).stat().st_mode), 0o700, name)
+        for name, mode in (("receiver.toml", 0o640), (".env", 0o640), ("setup.json", 0o600)):
+            self.assertEqual(stat.S_IMODE((self.output / name).stat().st_mode), mode, name)
+        for name, mode in (("config", 0o750), ("state", 0o700), ("feed", 0o700), ("references", 0o700)):
+            self.assertEqual(stat.S_IMODE((self.base / name).stat().st_mode), mode, name)
         env = (self.output / ".env").read_text()
         self.assertIn(f"ENGINE_CONFIG_DIR={self.output}\n", env)
         self.assertIn(f"ENGINE_REFERENCE_DIR={self.base / 'references'}\n", env)
@@ -237,21 +283,6 @@ class SetupToolTests(unittest.TestCase):
         self.assertEqual((code, list(result["commands"])), (0, ["up", "health"]))
         self.assertEqual(result["commands"]["up"], [*base, "up", "-d"])
 
-    def test_usage_errors_print_one_json_object_and_exit_2(self):
-        for args in (
-            ("deploy",),
-            ("deploy", "--output", str(self.output), "--timeout", "0"),
-            ("deploy", "--output", str(self.output), "--timeout", "-5"),
-            ("deploy", "--output", str(self.output), "--timeout", "nan"),
-            ("deploy", "--output", str(self.output), "--timeout", "inf"),
-            ("deploy", "--output", str(self.output), "--timeout", "soon"),
-        ):
-            with self.subTest(args=args):
-                code, result = run(*args)
-                self.assertEqual(code, 2)
-                self.assertFalse(result["ok"])
-                self.assertTrue(result["error"].startswith("usage: "), result)
-
     def test_configure_refuses_an_answers_file_inside_the_repository(self):
         code, result = run(
             "configure", "--answers", str(ROOT / "answers-test.json"), "--output", str(self.output)
@@ -301,21 +332,37 @@ class SetupToolTests(unittest.TestCase):
         answers = Path(self.answers("http://192.0.2.10/aircraft.json"))
         moved = self.output / "answers.json"
         answers.rename(moved)
+        moved.chmod(0o644)
         code, result = run("configure", "--answers", str(moved), "--output", str(self.output))
         self.assertEqual(code, 0, result)
-        self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o750)
+        self.assertEqual(stat.S_IMODE(moved.stat().st_mode), 0o600)
 
     @contextlib.contextmanager
-    def as_root(self, sudo_uid=None):
-        """Pretend configure runs as root, with SUDO_UID set or unset; yield the recorded fchown."""
+    def as_root(self, sudo_uid=None, ancestors=True):
+        """Pretend the tool runs as root, with SUDO_UID set or unset; yield the recorded fchown.
+
+        `fchown.owners` maps each path given an owner to its (uid, gid). With `ancestors`
+        false, the parent check is skipped, since a test's temporary directory belongs to the
+        test's account rather than root.
+        """
         environment = {key: value for key, value in os.environ.items() if key != "SUDO_UID"}
         if sudo_uid is not None:
             environment["SUDO_UID"] = str(sudo_uid)
-        with (
-            mock.patch.object(setup_tool.os, "geteuid", return_value=0),
-            mock.patch.dict(os.environ, environment, clear=True),
-            mock.patch.object(setup_tool.os, "fchown") as fchown,
-        ):
+        owners = {}
+
+        def record(descriptor, uid, gid):
+            path = Path(os.readlink(f"/proc/self/fd/{descriptor}"))
+            name = path.name[1:-4] if path.name.startswith(".") and path.name.endswith(".tmp") else path.name
+            owners[path.with_name(name)] = (uid, gid)
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(setup_tool.os, "geteuid", return_value=0))
+            stack.enter_context(mock.patch.dict(os.environ, environment, clear=True))
+            fchown = stack.enter_context(mock.patch.object(setup_tool.os, "fchown", side_effect=record))
+            if not ancestors:
+                stack.enter_context(mock.patch.object(setup_tool, "check_ancestors"))
+            fchown.owners = owners
             yield fchown
 
     def loose_directory(self, name, *contents):
@@ -336,9 +383,9 @@ class SetupToolTests(unittest.TestCase):
             for contents in ((), ("README",)):
                 with self.subTest(sudo_uid=sudo_uid, contents=contents):
                     target = self.loose_directory(f"foreign-{sudo_uid}-{len(contents)}", *contents)
-                    with self.as_root(sudo_uid) as fchown:
+                    with self.as_root(sudo_uid, ancestors=False) as fchown:
                         with self.assertRaisesRegex(setup_tool.SetupError, refusal):
-                            setup_tool.make_directory(target, values, frozenset(contents))
+                            setup_tool.make_directory(target, values, "data", frozenset(contents))
                     fchown.assert_not_called()
                     self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o755)
 
@@ -352,10 +399,183 @@ class SetupToolTests(unittest.TestCase):
         for name, sudo_uid, values, contents in cases:
             with self.subTest(name=name):
                 target = self.base / name if contents is None else self.loose_directory(name, *contents)
-                with self.as_root(sudo_uid) as fchown:
-                    setup_tool.make_directory(target, values, frozenset(contents or ()))
+                with self.as_root(sudo_uid, ancestors=False) as fchown:
+                    os.close(setup_tool.make_directory(target, values, "data", frozenset(contents or ())))
                 fchown.assert_called_once_with(mock.ANY, values["uid"], group)
                 self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o700)
+        # The configuration directory goes to the sudo user, or to root without one, never to uid.
+        for sudo_uid, expected in ((owner, owner), (None, 0)):
+            with self.subTest(config=sudo_uid):
+                target = self.base / f"config-{sudo_uid}"
+                with self.as_root(sudo_uid, ancestors=False) as fchown:
+                    os.close(setup_tool.make_directory(target, {"uid": owner + 1, "gid": group}, "config"))
+                fchown.assert_called_once_with(mock.ANY, expected, group)
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o750)
+
+    def sudo_configure(self, sudo_uid):
+        """Run configure in process as simulated root, with the answers kept in the config directory."""
+        self.output.mkdir(mode=0o700)
+        answers = Path(self.answers("http://192.0.2.10/aircraft.json", uid=os.getuid() + 1))
+        moved = self.output / "answers.json"
+        answers.rename(moved)
+        moved.chmod(0o644)
+        with self.as_root(sudo_uid) as fchown:
+            result = setup_tool.configure(str(moved), str(self.output))
+        return result, fchown.owners
+
+    def test_sudo_configure_keeps_the_configuration_with_the_operator(self):
+        owner, group = os.getuid(), os.getgid()
+        result, owners = self.sudo_configure(owner)
+        self.assertTrue(result["ok"], result)
+        operator, container = (owner, group), (owner + 1, group)
+        expected = {self.output: operator}
+        for name in ("receiver.toml", ".env", "setup.json", "answers.json"):
+            expected[self.output / name] = operator
+        for name in ("state", "feed", "references"):
+            expected[self.base / name] = container
+        for table in (ROOT / "src/wtf_adsb_engine/analysis/data").glob("*.json"):
+            expected[self.base / "references" / table.name] = container
+        self.assertEqual(owners, expected)
+        modes = {"receiver.toml": 0o640, ".env": 0o640, "setup.json": 0o600, "answers.json": 0o600}
+        for name, mode in modes.items():
+            self.assertEqual(stat.S_IMODE((self.output / name).stat().st_mode), mode, name)
+        self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o750)
+        for name in ("state", "feed", "references"):
+            self.assertEqual(stat.S_IMODE((self.base / name).stat().st_mode), 0o700, name)
+        with self.as_root(owner):
+            self.assertEqual(
+                setup_tool.configure(str(self.output / "answers.json"), str(self.output))["changed"], []
+            )
+
+    def test_sudo_refuses_parents_another_account_could_swap(self):
+        owner, values = os.getuid(), {"uid": os.getuid() + 1, "gid": os.getgid()}
+        # The temporary directory belongs to the test's account, which is not the sudo user here.
+        for sudo_uid in (None, owner + 2):
+            with self.subTest(sudo_uid=sudo_uid), self.as_root(sudo_uid) as fchown:
+                with self.assertRaisesRegex(setup_tool.SetupError, f"{self.base} belongs to uid {owner}"):
+                    setup_tool.make_directory(self.base / "state", values, "data")
+                fchown.assert_not_called()
+            self.assertFalse((self.base / "state").exists())
+        self.base.chmod(0o775)
+        try:
+            with (
+                self.as_root(owner),
+                self.assertRaisesRegex(setup_tool.SetupError, "writable by group or others"),
+            ):
+                setup_tool.make_directory(self.base / "state", values, "data")
+        finally:
+            self.base.chmod(0o700)
+        self.assertFalse((self.base / "state").exists())
+        link = self.base / "link"
+        link.symlink_to(self.base)
+        with self.as_root(owner):
+            os.close(setup_tool.make_directory(link / "state", values, "data"))
+        self.assertTrue((self.base / "state").is_dir())
+        self.assertEqual(self.configure()[0], 0)
+        with self.as_root(None), self.assertRaisesRegex(setup_tool.SetupError, f"{self.base} belongs to uid"):
+            setup_tool.check(str(self.output), self.docker)
+
+    def test_sudo_refuses_an_answers_file_another_account_owns(self):
+        answers = self.answers("http://192.0.2.10/aircraft.json")
+        with (
+            self.as_root(os.getuid() + 3),
+            self.assertRaisesRegex(setup_tool.SetupError, f"answers file belongs to uid {os.getuid()}"),
+        ):
+            setup_tool.configure(answers, str(self.output))
+        self.assertFalse(self.output.exists())
+
+    def test_writes_stay_in_the_opened_directory_after_a_swap(self):
+        values = {"uid": os.getuid(), "gid": os.getgid()}
+        target, elsewhere = self.base / "references", self.base / "elsewhere"
+        elsewhere.mkdir()
+        descriptor = setup_tool.make_directory(target, values, "data")
+        try:
+            target.rename(self.base / "moved")
+            target.symlink_to(elsewhere)
+            setup_tool.write_private(descriptor, "table.json", "{}\n", None, 0o644, target / "table.json")
+        finally:
+            os.close(descriptor)
+        self.assertEqual((self.base / "moved" / "table.json").read_text(), "{}\n")
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def test_write_private_replaces_a_hard_link_instead_of_securing_it(self):
+        outside = self.base / "outside.json"
+        outside.write_text("{}\n")
+        outside.chmod(0o644)
+        target = self.base / "references"
+        target.mkdir(mode=0o700)
+        os.link(outside, target / "table.json")
+        descriptor = os.open(target, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            changed = setup_tool.write_private(descriptor, "table.json", "{}\n", None, 0o600, "table.json")
+        finally:
+            os.close(descriptor)
+        self.assertTrue(changed)
+        self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o644)
+        self.assertEqual(outside.stat().st_nlink, 1)
+        self.assertEqual(stat.S_IMODE((target / "table.json").stat().st_mode), 0o600)
+
+    def test_check_and_deploy_refuse_files_the_container_account_could_change(self):
+        self.assertEqual(self.configure(viewer=False)[0], 0)
+        env = self.output / ".env"
+        original = env.read_bytes()
+        for path, loose, restore in (
+            (self.output, 0o770, 0o750),
+            (self.output / "setup.json", 0o620, 0o600),
+            (env, 0o660, 0o640),
+        ):
+            path.chmod(loose)
+            try:
+                for command in ("check", "deploy"):
+                    with self.subTest(path=path.name, command=command):
+                        code, result = run(command, "--output", str(self.output), "--docker", self.docker)
+                        self.assertEqual(code, 1)
+                        self.assertIn(f"{path} is writable by group or others", result["error"])
+            finally:
+                path.chmod(restore)
+        self.assertEqual(env.read_bytes(), original)
+        # Here the configured uid is the test's account, and the sudo user is someone else.
+        owner = os.getuid()
+        for call in (
+            lambda: setup_tool.check(str(self.output), self.docker),
+            lambda: setup_tool.deploy(str(self.output), self.docker, False, 1),
+        ):
+            with self.as_root(owner + 5, ancestors=False):
+                with self.assertRaisesRegex(setup_tool.SetupError, f"{self.output} belongs to uid {owner}"):
+                    call()
+        descriptor = os.open(self.output, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for name in (".env", "setup.json"):
+                with self.subTest(name=name), self.as_root(owner + 5):
+                    with self.assertRaisesRegex(setup_tool.SetupError, f"{name} belongs to uid {owner}"):
+                        setup_tool.open_trusted(descriptor, name, self.output / name)
+        finally:
+            os.close(descriptor)
+        self.assertEqual(env.read_bytes(), original)
+
+    def test_deploy_renders_env_from_setup_json_before_compose_reads_it(self):
+        self.assertEqual(self.configure(viewer=False)[0], 0)
+        env = self.output / ".env"
+        rendered = env.read_text()
+        env.write_text(rendered.replace(f"ENGINE_UID={os.getuid()}\n", "ENGINE_UID=0\n"))
+        self.assertIn("ENGINE_UID=0\n", env.read_text())
+        code, result = run("check", "--output", str(self.output), "--docker", self.docker)
+        self.assertIn(
+            f"{env}: differs from setup.json; rerun configure", result["checks"]["directories"]["problems"]
+        )
+        seen = self.base / "seen.env"
+        docker = self.base / "recording-docker"
+        docker.write_text(
+            "#!/bin/sh\n"
+            f'case " $* " in *" up "*) cat "$3" > {seen} ;; esac\n'
+            "echo 'Docker Compose version v0.0.0-test'\n"
+        )
+        docker.chmod(0o700)
+        code, result = run("deploy", "--output", str(self.output), "--docker", str(docker), "--timeout", "1")
+        self.assertEqual(code, 0, result)
+        self.assertEqual(seen.read_text(), rendered)
+        self.assertEqual(env.read_text(), rendered)
+        self.assertEqual(stat.S_IMODE(env.stat().st_mode), 0o640)
 
     def test_configure_refuses_a_symlinked_output_directory_or_config_file(self):
         real = self.base / "real-config"
@@ -389,7 +609,6 @@ class SetupToolTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("receiver.url is required", result["error"])
 
-    @unittest.skipIf(os.geteuid() == 0, "root can read any directory")
     def test_unreadable_settings_ask_for_sudo(self):
         self.assertEqual(self.configure()[0], 0)
         self.output.chmod(0)
@@ -401,26 +620,7 @@ class SetupToolTests(unittest.TestCase):
                     self.assertIn("rerun this with sudo", result["error"])
                     self.assertNotIn("run configure first", result["error"])
         finally:
-            self.output.chmod(0o700)
-
-    def test_probe_reports_a_malformed_http_response(self):
-        listener = socket.create_server(("127.0.0.1", 0))
-        self.addCleanup(listener.close)
-
-        def answer():
-            connection, _ = listener.accept()
-            with connection:
-                connection.recv(65536)
-                connection.sendall(b"not an HTTP status line\r\n\r\n")
-
-        thread = threading.Thread(target=answer, daemon=True)
-        thread.start()
-        result = setup_tool.probe(f"http://127.0.0.1:{listener.getsockname()[1]}/aircraft.json")
-        thread.join(5)
-        self.assertEqual(result, {"ok": False, "error": "BadStatusLine"})
-
-    def test_agents_and_claude_instructions_are_identical(self):
-        self.assertEqual((ROOT / "AGENTS.md").read_bytes(), (ROOT / "CLAUDE.md").read_bytes())
+            self.output.chmod(0o750)
 
 
 if __name__ == "__main__":
