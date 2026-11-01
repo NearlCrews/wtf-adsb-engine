@@ -32,7 +32,7 @@ are built locally; this project does not publish to an image registry.
 ## Try the synthetic replay
 
 Use Linux and [uv](https://docs.astral.sh/uv/getting-started/installation/).
-Python 3.14 or newer is required; the pinned and tested interpreter is 3.14.8.
+Python 3.14 or newer is required; the pinned and tested interpreter is 3.14.9.
 Native Windows is unsupported because the runtime uses POSIX file locking.
 
 Clone this repository using its GitHub Code menu, or extract its source archive,

@@ -32,6 +32,24 @@ initial development version and does not announce a published release.
 - MIT licensing, public documentation, contributor guidance, offline checks,
   source and wheel builds, and a GitHub Actions check workflow.
 
+### Changed
+
+- The analysis modules were resynced with the original application's analysis
+  as of 31 October 2026 by three-way merge from the 9 October extraction, keeping
+  every fix listed below. A kind registry (`analysis/kinds.py`) and the
+  enrichment rules the facts layer reads (`analysis/enrichment_rules.py`) now
+  define the kind tables. Curation holds a repeated kind on one airframe for 30
+  days, a type speed mismatch names a disagreeing registry's type instead of
+  being held by it, and selection derives per-type ground-speed norms.
+- Evidence contract 1.1.0 adds an optional `context.type_norms` object: for
+  each seasonal speed record or type speed mismatch, its type's usual ground
+  speed in these records, or null. A quiet group keeps the norm it was last
+  exported with, so the moving sample window issues no new revisions. Producers
+  write 1.1.0; readers accept 1.0.0 and 1.1.0 and refuse other versions by name.
+  The `wtf-adsb.collection.v1` profile is unchanged.
+- Python 3.14.9 (including the container base image), Ruff 0.17.2 and NumPy
+  2.5.4.
+
 ### Fixed
 
 - Container build tooling uses uv 0.12.24 and development checks use Ruff 0.17.0,
@@ -62,7 +80,7 @@ initial development version and does not announce a published release.
 
 ### Known limits
 
-- Linux and Python 3.14.8 are the tested platform. Native Windows is unsupported.
+- Linux and Python 3.14.9 are the tested platform. Native Windows is unsupported.
 - Stateful detector rules and provider clients share a compatibility plugin.
 - Format plugins preserve the JSON envelope. Hard plugin isolation, automatic
   history pruning, generation recovery, and online privacy erasure are deferred.

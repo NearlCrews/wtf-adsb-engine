@@ -14,7 +14,7 @@ make image
 docker run --rm --network none wtf-adsb-engine:local --version
 ```
 
-The multistage Dockerfile pins Python 3.14.8 and uv 0.12.24 by version and digest.
+The multistage Dockerfile pins Python 3.14.9 and uv 0.12.24 by version and digest.
 It builds the wheel inside Docker and installs dependencies from `uv.lock`,
 including the NumPy archive extra. The final image contains the installed
 package, its viewer assets and a real `engine` account with UID/GID 1000. Build
