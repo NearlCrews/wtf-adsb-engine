@@ -11,23 +11,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ("change-batch-v1.schema.json", "manifest-v1.schema.json", "observation-v1.schema.json")
-# Each shared file, and the resync task that adds it when it is not here yet (None: required).
-SHARED = {
-    "src/wtf_adsb_engine/wire.py": None,
-    "src/wtf_adsb_engine/analysis/kinds.py": None,
-    "src/wtf_adsb_engine/analysis/enrichment_rules.py": None,
-    **{f"src/wtf_adsb_engine/contracts/{name}": None for name in SCHEMAS},
-    **{f"contracts/{name}": None for name in SCHEMAS},
-}
+SHARED = (
+    "src/wtf_adsb_engine/wire.py",
+    "src/wtf_adsb_engine/analysis/kinds.py",
+    "src/wtf_adsb_engine/analysis/enrichment_rules.py",
+    *(f"src/wtf_adsb_engine/contracts/{name}" for name in SCHEMAS),
+    *(f"contracts/{name}" for name in SCHEMAS),
+)
 
 
 class SharedDigestTests(unittest.TestCase):
     def test_shared_files_match_the_recorded_digests(self):
         recorded = json.loads((ROOT / "sync-state.json").read_text(encoding="utf-8"))["shared_digests"]
-        for path, task in SHARED.items():
+        for path in SHARED:
             with self.subTest(path=path):
-                if task and not (ROOT / path).is_file():
-                    self.skipTest(f"{path} arrives with {task}")
                 self.assertIn(path, recorded, "record it with tools/sync_split.py --record-digests")
                 digest = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
                 self.assertEqual(digest, recorded[path], f"{path} differs from its recorded digest")

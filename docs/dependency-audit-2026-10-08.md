@@ -1,5 +1,10 @@
 # Dependency audit, 8 October 2026, updated 9 October
 
+> Note, 1 November 2026: this audit records the October baseline and is not
+> updated with later pins. The current pins are in `pyproject.toml` (and
+> `uv.lock`), and the [changelog](../CHANGELOG.md) records each change, such as
+> the 31 October move to Python 3.14.9, Ruff 0.17.2, and NumPy 2.5.4.
+
 The engine's direct Python dependencies match the latest stable releases checked
 against PyPI on 9 October 2026. The initial audit and reference-data review were
 completed on 8 October; the container follow-up updated Ruff and uv. Versions
