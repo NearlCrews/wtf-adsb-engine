@@ -131,13 +131,70 @@ def loads(data):
     return json.loads(data, object_pairs_hook=_object, parse_constant=_constant)
 
 
+# Keys and short strings privacy() has accepted, so repeated track fields and labels are
+# checked once per process. Bounded; a miss only means the full check runs again.
+_SAFE_KEYS, _SAFE_TEXT = set(), set()
+_SAFE_LIMIT = 8192
+_SCALARS = (int, bool, type(None))
+_NESTING, _FIELD, _TEXT = (
+    "Evidence nesting exceeds the limit",
+    "Private or invalid evidence field",
+    "Private or oversized evidence text",
+)
+
+
+def _key(key):
+    if not isinstance(key, str) or key.lower() in PRIVATE_KEYS:
+        raise ValueError(_FIELD)
+    if type(key) is str and len(_SAFE_KEYS) < _SAFE_LIMIT:
+        _SAFE_KEYS.add(key)
+
+
+def _text(value):
+    if len(value) > 20000 or PRIVATE_TEXT.search(value):
+        raise ValueError(_TEXT)
+    if len(value) <= 64 and len(_SAFE_TEXT) < _SAFE_LIMIT:
+        _SAFE_TEXT.add(value)
+
+
+def _items(items, depth, keyed):
+    """Check each (key, item) or item of a container whose children are at `depth` (at most
+    32): exact-type scalars inline, everything else through privacy()."""
+    isfinite = math.isfinite
+    for entry in items:
+        if keyed:
+            key, item = entry
+            if key not in _SAFE_KEYS or type(key) is not str:
+                _key(key)
+        else:
+            item = entry
+        kind = type(item)
+        if kind is str:
+            if item not in _SAFE_TEXT:
+                _text(item)
+        elif kind is float:
+            if not isfinite(item):
+                raise ValueError("Nonfinite evidence")
+        elif kind not in _SCALARS:
+            privacy(item, depth)
+
+
 def privacy(value, depth=0):
+    """Refuse private keys and text, nonfinite numbers, non-JSON values, and oversized or
+    too deeply nested evidence, walking the value in order (the first problem found wins)."""
     if depth > 32:
-        raise ValueError("Evidence nesting exceeds the limit")
-    if isinstance(value, dict):
+        raise ValueError(_NESTING)
+    kind = type(value)
+    if kind is dict and depth < 32:
+        _items(value.items(), depth + 1, True)
+    elif kind is list and depth < 32:
+        if len(value) > 50000:
+            raise ValueError("Evidence array exceeds the limit")
+        _items(value, depth + 1, False)
+    elif isinstance(value, dict):
         for key, item in value.items():
             if not isinstance(key, str) or key.lower() in PRIVATE_KEYS:
-                raise ValueError("Private or invalid evidence field")
+                raise ValueError(_FIELD)
             privacy(item, depth + 1)
     elif isinstance(value, list):
         if len(value) > 50000:
@@ -146,7 +203,7 @@ def privacy(value, depth=0):
             privacy(item, depth + 1)
     elif isinstance(value, str):
         if len(value) > 20000 or PRIVATE_TEXT.search(value):
-            raise ValueError("Private or oversized evidence text")
+            raise ValueError(_TEXT)
     elif isinstance(value, float) and not math.isfinite(value):
         raise ValueError("Nonfinite evidence")
     elif value is not None and not isinstance(value, (str, bool, int, float)):
@@ -259,7 +316,8 @@ def _structure(name, value):
         raise ValueError("Record does not match the structural contract") from None
 
 
-def validate_observation(value):
+def _validated(value):
+    """Validate an observation; return the sha256 of its canonical encoding."""
     privacy(value)
     encoded = canonical(value)
     if len(encoded) > MAX_EVENT_BYTES:
@@ -268,7 +326,7 @@ def validate_observation(value):
     with _VALIDATION_LOCK:
         if fingerprint in _VALIDATED_OBSERVATIONS:
             _VALIDATED_OBSERVATIONS.move_to_end(fingerprint)
-            return value
+            return fingerprint
     _structure("observation-v1.schema.json", value)
     _novelty(value["context"].get("novelty"))
     _media(value["media"])
@@ -318,7 +376,18 @@ def validate_observation(value):
         _VALIDATED_OBSERVATIONS[fingerprint] = True
         if len(_VALIDATED_OBSERVATIONS) > _VALIDATION_CACHE_LIMIT:
             _VALIDATED_OBSERVATIONS.popitem(last=False)
+    return fingerprint
+
+
+def validate_observation(value):
+    _validated(value)
     return value
+
+
+def observation_digest(value):
+    """Validate an observation and return its evidence digest (digest(value)), computed from
+    the encoding the validation reads."""
+    return _validated(value).hex()
 
 
 def _contract(record, schema, error):
@@ -407,10 +476,10 @@ def validate_batch(batch, *, allow_synthetic=False):
                 "observation",
             }:
                 raise ValueError("Invalid upsert")
-            validate_observation(change["observation"])
+            evidence_digest = observation_digest(change["observation"])
             if batch["schema_version"] == "1.0.0" and "type_norms" in change["observation"]["context"]:
                 raise ValueError("Unsupported observation contract")
-            if digest(change["observation"]) != change["evidence_digest"]:
+            if evidence_digest != change["evidence_digest"]:
                 raise ValueError("Evidence digest mismatch")
             for extension in change["observation"].get("extensions", []):
                 if declared.get(extension["namespace"]) != extension["schema_version"]:
