@@ -10,11 +10,7 @@ and evidence contract versions are tracked separately.
 - Continuous collection no longer fails a poll with "database is locked" when
   enrichment writes the journal at the same moment. The collector now takes the
   journal's write lock before it reads, so it waits for another writer instead
-  of failing at once. Collection and enrichment also take turns on the journal:
-  an enrichment pass waits for collection, and collection waits at most
-  `collection_wait_seconds` (default 3) for enrichment before it skips that
-  poll. A skipped poll is not a failure; receiver health counts skips as
-  `skipped_collections`.
+  of failing at once.
 
 ### Changed
 

@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -464,6 +465,22 @@ class RuntimeTests(unittest.TestCase):
             ),
             "ValueError: <secret> from <host> and <host>",
         )
+        # A key name joined to a prefix by an underscore is still a key name.
+        self.assertEqual(
+            failure_message(
+                ValueError("client_secret=alpha refresh_token=bravo flightaware_api_key=charlie")
+            ),
+            "ValueError: client_<secret> refresh_<secret> flightaware_<secret>",
+        )
+
+    def test_failure_message_survives_an_exception_that_cannot_be_printed(self):
+        from wtf_adsb_engine.runtime import failure_message
+
+        class Unprintable(Exception):
+            def __str__(self):
+                raise RuntimeError("no text")
+
+        self.assertEqual(failure_message(Unprintable()), "Unprintable")
 
     def test_format_state_survives_initialization_and_is_separate_from_sink_state(self):
         runtime = Runtime(self.config)
@@ -710,11 +727,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(collector.detector.last_poll, snapshots[1]["now"])
         self.assertTrue(released)
 
-    def receiver_fixture(self, bound):
+    def receiver_fixture(self):
         """A receiver service whose input returns a fresh two-aircraft snapshot each poll."""
-        service = ReceiverService(
-            {"url": "http://127.0.0.1/fixture", "poll_seconds": 60, "collection_wait_seconds": bound}
-        )
+        service = ReceiverService({"url": "http://127.0.0.1/fixture", "poll_seconds": 60})
         messages = iter(range(100, 10**6))
         fetched = []
 
@@ -736,59 +751,25 @@ class RuntimeTests(unittest.TestCase):
                 }
                 for address in ("a00001", "a00002")
             ]
-            fetched.append(time.monotonic())
+            fetched.append(current.now)
             return InputBatch(
                 ({"snapshot": {"now": current.now, "aircraft": aircraft}},), current.now, current.now
             )
 
         return service, poll, fetched
 
-    def test_collection_skips_an_attempt_while_enrichment_holds_the_journal(self):
-        bound = 0.2
-        service, poll, _ = self.receiver_fixture(bound)
-        context = Context("receiver", self.root, "fixture", time.time())
-        with (
-            patch.object(service.input, "poll", side_effect=poll),
-            patch("wtf_adsb_engine.analysis.native.NativeCollector.enrich"),
-        ):
-            try:
-                service.initialize(context)
-                committed, attempted = service.collector.detector.last_poll, service.last_attempt
-                with service.journal, self.assertLogs("wtf_adsb_engine.builtins.receiver", "INFO") as logged:
-                    for _ in range(2):
-                        started = time.monotonic()
-                        service._collect()
-                        self.assertLess(time.monotonic() - started, bound + 0.15)
-                # Skips are logged once per run, and are neither failures nor attempts.
-                self.assertEqual(
-                    [(record.levelname, record.getMessage()) for record in logged.records],
-                    [("INFO", "Receiver collection skipped while enrichment holds the journal")],
-                )
-                self.assertEqual(service.collector.detector.last_poll, committed)
-                self.assertEqual(service.last_attempt, attempted)
-                self.assertIsNone(service.failure)
-                health = service.health()
-                self.assertEqual((health["state"], health["skipped_collections"]), ("ready", 2))
-                # The next poll after enrichment releases the journal commits again.
-                time.sleep(0.01)
-                service._collect()
-                self.assertGreater(service.collector.detector.last_poll, committed)
-                self.assertFalse(service.skipping)
-            finally:
-                service.close()
-
-    def test_collection_and_enrichment_take_turns_on_one_journal(self):
+    def test_collection_and_enrichment_write_one_journal_concurrently(self):
+        # Without any lock in the service, SQLite's write lock and busy timeout alone
+        # keep concurrent collection and enrichment from failing with "database is locked".
         from wtf_adsb_engine.analysis import app
 
-        bound = 0.2
-        service, poll, fetched = self.receiver_fixture(bound)
+        service, poll, fetched = self.receiver_fixture()
         context = Context("receiver", self.root, "fixture", time.time())
         passes, errors = [], []
 
         def enrich(collector, now, **ignored):
             # A short write transaction like the providers' own, and on every fourth
-            # pass a network request longer than the collection bound.
-            passes.append(now)
+            # pass a slow network request outside any transaction.
             try:
                 with app.connect(collector.path) as db:
                     app.put_meta(db, "test_enrichment", now)
@@ -797,10 +778,10 @@ class RuntimeTests(unittest.TestCase):
             except sqlite3.Error as error:
                 errors.append(error)
                 raise
+            passes.append(now)
             if len(passes) % 4 == 0:
-                time.sleep(bound * 2.5)
+                time.sleep(0.5)
 
-        processed = []
         stop = threading.Event()
 
         def drive_enrichment():
@@ -817,24 +798,12 @@ class RuntimeTests(unittest.TestCase):
                 service.initialize(context)
                 # As in a settled journal, a poll writes nothing before its aircraft.
                 service.collector.detector.next_rarity = float("inf")
-                process = service.collector.process
-
-                def timed_process(snapshot, wall_now=None):
-                    processed.append((fetched[-1], time.monotonic()))
-                    return process(snapshot, wall_now=wall_now)
-
-                service.collector.process = timed_process
                 enrichment = threading.Thread(target=drive_enrichment)
                 enrichment.start()
                 try:
                     for _ in range(40):
-                        started = time.monotonic()
                         service._collect()
-                        waited = time.monotonic() - started
                         self.assertIsNone(service.failure)
-                        if not processed or processed[-1][0] < started:
-                            # Skipped: the whole attempt stayed within the bound.
-                            self.assertLess(waited, bound + 0.15)
                         time.sleep(0.02)
                 finally:
                     stop.set()
@@ -843,11 +812,13 @@ class RuntimeTests(unittest.TestCase):
                 service.close()
         self.assertEqual(errors, [])
         self.assertGreater(len(passes), 4)
-        # Each committed attempt started processing within the bound of its fetch.
-        self.assertTrue(all(begun - fetch < bound + 0.15 for fetch, begun in processed))
-        self.assertGreater(len(processed), 5)
-        self.assertGreater(service.skipped, 0)
-        self.assertEqual(service.health()["skipped_collections"], service.skipped)
+        # Every collection and every enrichment pass committed, and nothing was lost.
+        self.assertEqual(len(fetched), 41)
+        self.assertEqual(service.collector.detector.last_poll, fetched[-1])
+        with closing(app.connect(service.collector.path)) as db:
+            self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            self.assertEqual(db.execute("SELECT SUM(polls) FROM coverage").fetchone()[0], len(fetched))
+            self.assertEqual(app.meta(db, "test_enrichment"), passes[-1])
 
 
 if __name__ == "__main__":

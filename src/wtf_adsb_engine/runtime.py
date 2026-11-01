@@ -26,7 +26,9 @@ PROVIDER_DETAIL = (
     (re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.I), "<url>"),
     (
         re.compile(
-            r"\b(?:api[_-]?key|x-apikey|access[_-]?token|token|secret|password|passwd|authorization)"
+            # The leading boundary admits an underscore prefix, as in client_secret.
+            r"(?<![a-z0-9])"
+            r"(?:api[_-]?key|x-apikey|access[_-]?token|token|secret|password|passwd|authorization)"
             r"\b[\"']?\s*[:=]\s*[\"']?(?:bearer\s+)?[^\s,;'\"]+|\bbearer\s+[^\s,;'\"]+",
             re.I,
         ),
@@ -54,8 +56,12 @@ def failure_message(error):
     status file or evidence record carries the result.
     """
     # A schema error's own text repeats the whole schema and instance; its message is one line.
-    message = getattr(error, "message", None)
-    text = " ".join((message if isinstance(message, str) else str(error)).split())
+    try:
+        message = getattr(error, "message", None)
+        text = " ".join((message if isinstance(message, str) else str(error)).split())
+    except Exception:
+        # Callers log from except blocks, so an unprintable exception leaves only its class.
+        text = ""
     for pattern, replacement in PROVIDER_DETAIL:
         text = pattern.sub(replacement, text)
     text = wire.PRIVATE_TEXT.sub("<private>", text)

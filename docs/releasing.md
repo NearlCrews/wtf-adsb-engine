@@ -115,7 +115,8 @@ The tag starts `.github/workflows/release.yml`, which uses only the workflow's
    (`v0.1.0`), and writes the pushed digest to the job summary and the release
    notes;
 4. creates the GitHub release for the tag with those two inventories, the
-   source archive, and the wheel attached;
+   source archive, and the wheel attached, and marks a pre-release as a
+   pre-release that does not become the latest GitHub release;
 5. tags and pushes the same image as `latest`, only after the release exists
    and only when `packaging` does not report the version as a pre-release
    (`Version(version).is_prerelease`). A pre-release such as `0.2.0rc1`,
