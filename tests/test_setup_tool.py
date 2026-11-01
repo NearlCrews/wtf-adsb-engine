@@ -1,6 +1,7 @@
 """The setup tool's plan, configure, check, and deploy dry run work offline."""
 
 import ast
+import importlib.util
 import json
 import os
 import re
@@ -21,6 +22,9 @@ from wtf_adsb_engine.runtime import Runtime
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "setup.py"
 INTERVIEW = ROOT / "docs" / "setup-interview.md"
+SPEC = importlib.util.spec_from_file_location("wtf_setup_tool", SCRIPT)
+setup_tool = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(setup_tool)
 
 
 def run(*args):
@@ -219,11 +223,148 @@ class SetupToolTests(unittest.TestCase):
             "-f",
             str(ROOT / "deploy/compose.yaml"),
         ]
+        self.assertEqual(list(result["commands"]), ["up", "remove_viewer", "health"])
         self.assertEqual(result["commands"]["up"], [*base, "up", "-d", "engine"])
+        self.assertEqual(result["commands"]["remove_viewer"], [*base, "rm", "--stop", "--force", "viewer"])
         self.assertEqual(
             result["commands"]["health"],
             [*base, "exec", "-T", "engine", "wtf-adsb-engine", "health", "--config", "/config/receiver.toml"],
         )
+        self.assertEqual(self.configure(viewer=True)[0], 0)
+        code, result = run("deploy", "--output", str(self.output), "--print-only", "--docker", self.docker)
+        self.assertEqual((code, list(result["commands"])), (0, ["up", "health"]))
+        self.assertEqual(result["commands"]["up"], [*base, "up", "-d"])
+
+    def test_usage_errors_print_one_json_object_and_exit_2(self):
+        for args in (
+            ("deploy",),
+            ("deploy", "--output", str(self.output), "--timeout", "0"),
+            ("deploy", "--output", str(self.output), "--timeout", "-5"),
+            ("deploy", "--output", str(self.output), "--timeout", "nan"),
+            ("deploy", "--output", str(self.output), "--timeout", "inf"),
+            ("deploy", "--output", str(self.output), "--timeout", "soon"),
+        ):
+            with self.subTest(args=args):
+                code, result = run(*args)
+                self.assertEqual(code, 2)
+                self.assertFalse(result["ok"])
+                self.assertTrue(result["error"].startswith("usage: "), result)
+
+    def test_configure_refuses_an_answers_file_inside_the_repository(self):
+        code, result = run(
+            "configure", "--answers", str(ROOT / "answers-test.json"), "--output", str(self.output)
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("answers file outside this repository", result["error"])
+        self.assertFalse(self.output.exists())
+
+    def test_configure_refuses_paths_that_contain_the_repository_or_sit_near_the_root(self):
+        url = "http://192.0.2.10/aircraft.json"
+        if len(ROOT.parent.parts) >= 3:
+            code, result = run("configure", "--answers", self.answers(url), "--output", str(ROOT.parent))
+            self.assertEqual(code, 1)
+            self.assertIn("must not contain it", result["error"])
+        for value in ("/srv", "/srv/", "/opt"):
+            with self.subTest(value=value):
+                code, result = self.configure(url, state_dir=value)
+                self.assertEqual(code, 1)
+                self.assertIn("two directories below /", result["error"])
+        self.assertFalse(self.output.exists())
+
+    def test_configure_refuses_overlapping_directories(self):
+        for extra in (
+            {"feed_dir": str(self.base / "state" / "feed")},
+            {"reference_dir": str(self.output / "references")},
+            {"state_dir": str(self.base)},
+        ):
+            with self.subTest(extra=extra):
+                code, result = self.configure(**extra)
+                self.assertEqual(code, 1)
+                self.assertIn("must be separate", result["error"])
+
+    def test_configure_will_not_take_over_a_directory_holding_other_files(self):
+        busy = self.base / "busy"
+        busy.mkdir(mode=0o755)
+        busy.chmod(0o755)
+        (busy / "notes.txt").write_text("keep me\n")
+        code, result = self.configure(state_dir=str(busy))
+        self.assertEqual(code, 1)
+        self.assertIn("will not change it", result["error"])
+        self.assertEqual(stat.S_IMODE(busy.stat().st_mode), 0o755)
+        # A directory holding only the answers file and files configure writes is taken over.
+        self.output.mkdir(mode=0o755, exist_ok=True)
+        self.output.chmod(0o755)
+        answers = Path(self.answers("http://192.0.2.10/aircraft.json"))
+        moved = self.output / "answers.json"
+        answers.rename(moved)
+        code, result = run("configure", "--answers", str(moved), "--output", str(self.output))
+        self.assertEqual(code, 0, result)
+        self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o700)
+
+    def test_configure_refuses_a_symlinked_output_directory_or_config_file(self):
+        real = self.base / "real-config"
+        real.mkdir(mode=0o700)
+        self.output.symlink_to(real)
+        code, result = self.configure()
+        self.assertEqual(code, 1)
+        self.assertIn("real directory", result["error"])
+        self.output.unlink()
+        self.assertEqual(self.configure()[0], 0)
+        elsewhere = self.base / "elsewhere.toml"
+        elsewhere.write_text("untouched\n")
+        elsewhere.chmod(0o644)
+        (self.output / "receiver.toml").unlink()
+        (self.output / "receiver.toml").symlink_to(elsewhere)
+        code, result = self.configure(**{"receiver.poll_seconds": 20})
+        self.assertEqual(code, 1)
+        self.assertIn("not a symbolic link", result["error"])
+        self.assertEqual(elsewhere.read_text(), "untouched\n")
+        self.assertEqual(stat.S_IMODE(elsewhere.stat().st_mode), 0o644)
+
+    def test_null_answers_take_their_defaults(self):
+        code, result = self.configure(uid=None, gid=None, memory_limit=None, flightaware_key_file=None)
+        self.assertEqual(code, 0, result)
+        env = (self.output / ".env").read_text()
+        self.assertIn("ENGINE_UID=1000\n", env)
+        self.assertIn("ENGINE_GID=1000\n", env)
+        self.assertIn("ENGINE_MEMORY_LIMIT=2g\n", env)
+        self.assertNotIn("None", env)
+        code, result = self.configure(None)
+        self.assertEqual(code, 1)
+        self.assertIn("receiver.url is required", result["error"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read any directory")
+    def test_unreadable_settings_ask_for_sudo(self):
+        self.assertEqual(self.configure()[0], 0)
+        self.output.chmod(0)
+        try:
+            for command in ("check", "deploy"):
+                with self.subTest(command=command):
+                    code, result = run(command, "--output", str(self.output), "--docker", self.docker)
+                    self.assertEqual(code, 1)
+                    self.assertIn("rerun this with sudo", result["error"])
+                    self.assertNotIn("run configure first", result["error"])
+        finally:
+            self.output.chmod(0o700)
+
+    def test_probe_reports_a_malformed_http_response(self):
+        listener = socket.create_server(("127.0.0.1", 0))
+        self.addCleanup(listener.close)
+
+        def answer():
+            connection, _ = listener.accept()
+            with connection:
+                connection.recv(65536)
+                connection.sendall(b"not an HTTP status line\r\n\r\n")
+
+        thread = threading.Thread(target=answer, daemon=True)
+        thread.start()
+        result = setup_tool.probe(f"http://127.0.0.1:{listener.getsockname()[1]}/aircraft.json")
+        thread.join(5)
+        self.assertEqual(result, {"ok": False, "error": "BadStatusLine"})
+
+    def test_agents_and_claude_instructions_are_identical(self):
+        self.assertEqual((ROOT / "AGENTS.md").read_bytes(), (ROOT / "CLAUDE.md").read_bytes())
 
 
 if __name__ == "__main__":

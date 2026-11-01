@@ -22,8 +22,9 @@ name.
    Identity, and Runtime. Send one message per group. Show each question's
    default and accept "defaults" as an answer. Validate each answer against
    the rule in the document and ask again when one fails. Tell the user that
-   the Receiver, Providers, and Identity answers stay fixed for the life of
-   the state directory.
+   the Receiver and Providers answers and `source_instance` stay fixed for the
+   life of the state directory; `uid`, `gid`, and the Runtime answers can
+   change later.
 5. For a provider key, ask only for the path of a key file the user has
    already created. Never ask for, accept, or repeat the key itself. If the
    user pastes a key, tell them not to, do not store or echo it, and ask them
@@ -40,12 +41,21 @@ name.
    the user, then run check again until `ok` is true.
 9. Run `python3 tools/setup.py deploy --output DIR`. It starts the services
    and waits up to 120 seconds for the engine's health command.
+
+   If configure ran with `sudo`, `DIR` now belongs to `uid` with mode 0700,
+   and the user's account can no longer read it. Run check and deploy with
+   `sudo` as well, and use `sudo` to edit `DIR/answers.json` and rerun
+   configure when an answer changes later. A result that says "rerun with
+   sudo" means this step was missed.
 10. Report the health JSON from deploy to the user. Explain that readiness can
     take several minutes longer, because the first export must finish.
 
 Every subcommand prints one JSON object and exits nonzero on failure. Rerunning
-configure with the same answers changes nothing. `deploy --print-only` shows
-the Compose commands without running them.
+configure with the same answers changes nothing. configure refuses to take over
+an existing directory that holds other files unless it already has mode 0700
+and the configured owner. `deploy --print-only` shows the Compose commands
+without running them. When `viewer` is false, deploy starts only the engine
+and stops and removes a viewer left from an earlier deploy.
 
 ## Upkeep to tell the user
 

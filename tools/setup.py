@@ -8,9 +8,11 @@ engine's. It never reads provider key files; it checks their metadata only.
 """
 
 import argparse
+import http.client
 import importlib.util
 import ipaddress
 import json
+import math
 import os
 import re
 import shutil
@@ -137,8 +139,10 @@ def plan():
     }
 
 
-def inside_repository(path):
-    return Path(os.path.abspath(path)).resolve().is_relative_to(ROOT)
+def overlaps_repository(path):
+    """True when the path is inside this repository or contains it, after resolving links."""
+    resolved = Path(os.path.abspath(path)).resolve()
+    return resolved.is_relative_to(ROOT) or ROOT.is_relative_to(resolved)
 
 
 def is_number(value):
@@ -150,9 +154,12 @@ def check_path(key, value):
         raise SetupError(
             f"{key} must be an absolute path of letters, digits, '.', '_', '-', and '/' without '..'"
         )
-    if inside_repository(value):
-        raise SetupError(f"{key} must be outside this repository")
-    return os.path.normpath(value)
+    normal = os.path.normpath(value)
+    if len(Path(normal).parts) < 3:
+        raise SetupError(f"{key} must be at least two directories below /, such as /srv/wtf-adsb")
+    if overlaps_repository(normal):
+        raise SetupError(f"{key} must be outside this repository and must not contain it")
+    return normal
 
 
 def check_url(value):
@@ -187,7 +194,9 @@ def normalize(answers):
         raise SetupError("Unknown answer keys: " + ", ".join(unknown))
     values = {}
     for question in QUESTIONS:
-        value = answers.get(question.key, question.default)
+        value = answers.get(question.key)
+        if value is None:
+            value = question.default
         if value is None:
             if question.required:
                 raise SetupError(f"{question.key} is required")
@@ -336,18 +345,54 @@ def render_env(values, places):
     return "\n".join(lines) + "\n"
 
 
-def owner(path, values):
+def secure(descriptor, values, mode):
+    """Set the mode, and under sudo the owner, through an open descriptor, never a path."""
+    os.fchmod(descriptor, mode)
     if os.geteuid() == 0:
-        os.chown(path, values["uid"], values["gid"], follow_symlinks=False)
+        os.fchown(descriptor, values["uid"], values["gid"])
 
 
-def make_directory(path, values):
+def already_secured(info, values):
+    """True when an existing directory has mode 0700 and the owner configure would give it."""
+    if stat.S_IMODE(info.st_mode) != 0o700:
+        return False
+    if os.geteuid() == 0:
+        return (info.st_uid, info.st_gid) == (values["uid"], values["gid"])
+    return info.st_uid == os.geteuid()
+
+
+def make_directory(path, values, known=frozenset()):
+    """Create a private directory, or secure an existing one only when that is safe.
+
+    An existing directory keeps its mode and owner unless it is empty or holds only
+    the files named in `known`; anything else is refused rather than changed.
+    """
     try:
-        path.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if path.is_symlink() or not path.is_dir():
-            raise SetupError(f"{path} must be a real directory")
-        path.chmod(0o700)
-        owner(path, values)
+        try:
+            path.mkdir(mode=0o700, parents=True)
+            created = True
+        except FileExistsError:
+            created = False
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except PermissionError:
+            raise
+        except OSError:
+            raise SetupError(f"{path} must be a real directory, not a file or symbolic link") from None
+        try:
+            info = os.fstat(descriptor)
+            if not created and not already_secured(info, values):
+                unexpected = sorted(set(os.listdir(descriptor)) - known)
+                if unexpected:
+                    raise SetupError(
+                        f"{path} already exists with mode {stat.S_IMODE(info.st_mode):o}, owner "
+                        f"{info.st_uid}:{info.st_gid}, and other files in it, so configure will not change "
+                        "it. Name a new or empty directory, or give it mode 0700 and the configured owner "
+                        "yourself."
+                    )
+            secure(descriptor, values, 0o700)
+        finally:
+            os.close(descriptor)
     except PermissionError:
         raise SetupError(
             f"No permission to create or secure {path}. Create its parent with your account as the owner, "
@@ -356,21 +401,40 @@ def make_directory(path, values):
 
 
 def write_private(path, content, values, mode=0o600):
-    """Write a file atomically with the given mode; report whether it changed."""
+    """Write a file atomically with the given mode; report whether it changed.
+
+    Modes and owners are set on open descriptors before the file takes its final name,
+    so a symbolic link swapped in by the directory's owner is never followed.
+    """
     data = content if isinstance(content, bytes) else content.encode()
-    if path.is_symlink():
-        raise SetupError(f"{path} must not be a symbolic link")
-    unchanged = path.is_file() and path.read_bytes() == data
-    if not unchanged:
-        temporary = path.with_name("." + path.name + ".tmp")
-        temporary.unlink(missing_ok=True)
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(data)
-        os.replace(temporary, path)
-    path.chmod(mode)
-    owner(path, values)
-    return not unchanged
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        descriptor = None
+    except PermissionError:
+        raise
+    except OSError:
+        raise SetupError(f"{path} must be a regular file, not a symbolic link") from None
+    if descriptor is not None:
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise SetupError(f"{path} must be a regular file, not a symbolic link")
+            with os.fdopen(os.dup(descriptor), "rb") as stream:
+                unchanged = stream.read(len(data) + 1) == data
+            if unchanged:
+                secure(descriptor, values, mode)
+                return False
+        finally:
+            os.close(descriptor)
+    temporary = path.with_name("." + path.name + ".tmp")
+    temporary.unlink(missing_ok=True)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+        stream.flush()
+        secure(stream.fileno(), values, mode)
+    os.replace(temporary, path)
+    return True
 
 
 def reference_tables():
@@ -395,11 +459,30 @@ def guard_persisted_input(target, new_text, state):
             )
 
 
+def known_entries(name, path, values, answers_path):
+    """Names configure may find in a directory it has not secured yet: its own files and the answers' files."""
+    known = set()
+    if name == "config":
+        known |= {CONFIG_NAME, ENV_NAME, SETTINGS_NAME}
+    if name == "reference":
+        known |= {table.name for table in reference_tables()}
+    named = [Path(os.path.abspath(answers_path))]
+    named += [
+        Path(values[key])
+        for key in ("flightaware_key_file", "flightaware_pause_file", "fleet_reference_file")
+        if values[key] is not None
+    ]
+    known |= {item.name for item in named if item.parent == path}
+    return frozenset(known | {"." + item + ".tmp" for item in known})
+
+
 def configure(answers_path, output):
-    if inside_repository(answers_path):
+    if overlaps_repository(answers_path):
         raise SetupError("Keep the answers file outside this repository")
     try:
         answers = json.loads(Path(answers_path).read_text())
+    except PermissionError:
+        raise SetupError("No permission to read the answers file; rerun with sudo") from None
     except (OSError, ValueError) as error:
         raise SetupError(f"Cannot read the answers file ({type(error).__name__})") from None
     output = Path(check_path("--output", str(Path(os.path.abspath(output)))))
@@ -409,8 +492,8 @@ def configure(answers_path, output):
     parsed = tomllib.loads(config_text)
     if parsed["pipelines"][0]["input"]["options"]["url"] != values["receiver.url"]:
         raise SetupError("receiver.url did not survive TOML encoding")
-    for path in places.values():
-        make_directory(path, values)
+    for name, path in places.items():
+        make_directory(path, values, known_entries(name, path, values, answers_path))
     target = output / CONFIG_NAME
     guard_persisted_input(target, config_text, places["state"])
     changed = []
@@ -458,7 +541,11 @@ def load_settings(output):
         settings = json.loads(path.read_text())
         values = normalize(settings["answers"])
         places = {name: Path(value) for name, value in settings["directories"].items()}
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except PermissionError:
+        raise SetupError(
+            f"No permission to read {path}. configure ran with sudo for another uid, so rerun this with sudo"
+        ) from None
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         raise SetupError(f"Cannot read {path} ({type(error).__name__}); run configure first") from None
     return values, places
 
@@ -585,7 +672,7 @@ def probe(url):
             body = response.read(16 * 1024 * 1024)
     except urllib.error.HTTPError as error:
         return {"ok": False, "status": error.code}
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, http.client.HTTPException) as error:
         return {"ok": False, "error": type(error).__name__}
     try:
         document = json.loads(body)
@@ -614,25 +701,39 @@ def check(output, docker):
 
 
 def compose_commands(output, docker, viewer):
+    """Return the ordered start commands and the health command.
+
+    With the viewer turned off, `up` starts only the engine and a viewer left from an
+    earlier deploy is stopped and removed.
+    """
     base = [docker, "compose", "--env-file", str(Path(output) / ENV_NAME), "-f", str(COMPOSE)]
-    up = [*base, "up", "-d"] + ([] if viewer else ["engine"])
+    steps = {"up": [*base, "up", "-d"]}
+    if not viewer:
+        steps["up"].append("engine")
+        steps["remove_viewer"] = [*base, "rm", "--stop", "--force", "viewer"]
     health = [*base, "exec", "-T", "engine", "wtf-adsb-engine", "health", "--config", CONTAINER_CONFIG]
-    return up, health
+    return steps, health
 
 
 def deploy(output, docker, print_only, timeout):
     values, _ = load_settings(output)
     if not (Path(output) / ENV_NAME).is_file():
         raise SetupError("Run configure before deploy")
-    up, health = compose_commands(output, docker, values["viewer"])
+    steps, health = compose_commands(output, docker, values["viewer"])
     if print_only:
-        return {"ok": True, "commands": {"up": up, "health": health}}
-    try:
-        started = subprocess.run(up, capture_output=True, text=True, timeout=900)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise SetupError(f"docker compose up failed ({type(error).__name__})") from None
-    if started.returncode:
-        return {"ok": False, "step": "up", "returncode": started.returncode, "error": started.stderr[-600:]}
+        return {"ok": True, "commands": {**steps, "health": health}}
+    for step, command in steps.items():
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=900)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise SetupError(f"docker compose {step} failed ({type(error).__name__})") from None
+        if completed.returncode:
+            return {
+                "ok": False,
+                "step": step,
+                "returncode": completed.returncode,
+                "error": completed.stderr[-600:],
+            }
     deadline = time.monotonic() + timeout
     last = {}
     while True:
@@ -651,6 +752,16 @@ def deploy(output, docker, print_only, timeout):
         time.sleep(HEALTH_INTERVAL)
 
 
+def positive_seconds(text):
+    try:
+        value = float(text)
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError("must be a finite number of seconds greater than 0")
+    return value
+
+
 def main(argv=None):
     parser = JsonParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True, parser_class=JsonParser)
@@ -664,7 +775,7 @@ def main(argv=None):
     deploy_parser = commands.add_parser("deploy", help="Start the services and wait for health")
     deploy_parser.add_argument("--output", required=True)
     deploy_parser.add_argument("--print-only", action="store_true")
-    deploy_parser.add_argument("--timeout", type=float, default=120)
+    deploy_parser.add_argument("--timeout", type=positive_seconds, default=120)
     deploy_parser.add_argument("--docker", default="docker", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:

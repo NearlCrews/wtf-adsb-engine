@@ -25,8 +25,9 @@ and the readiness command shown below.
 
 You need Linux on x86-64 (amd64), Docker with Compose, GNU Make, and a receiver
 whose `aircraft.json` the Docker host can reach. `make image` builds for
-`linux/amd64` only; set `PLATFORM=` to try another platform. Clone this
-repository, change into it, and build the image:
+`linux/amd64` only; to try another platform, pass it, as in
+`make image PLATFORM=linux/arm64`. Clone this repository, change into it, and
+build the image:
 
 ```sh
 make image

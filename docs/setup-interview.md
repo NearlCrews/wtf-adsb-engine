@@ -5,7 +5,7 @@ with `tools/setup.py`. A person can answer them just as well by writing the
 answers file by hand. [AGENTS.md](../AGENTS.md) describes the full protocol.
 
 Ask the groups in order, one message per group, and show each default. Leave a
-key out of the answers file to accept its default. `python3 tools/setup.py plan`
+key out of the answers file, or set it to `null`, to accept its default. `python3 tools/setup.py plan`
 prints the same questions as JSON.
 
 ## Where the answers go
@@ -16,7 +16,12 @@ answers file, the generated `receiver.toml`, `.env`, and `setup.json`, and any
 provider key file. Compose mounts it read-only at `/config` inside the
 container. `configure` creates it, and the state, feed, and reference
 directories, with mode 0700. When run with `sudo`, it also gives them to `uid`
-and `gid`.
+and `gid`, and later `check`, `deploy`, and configure runs need `sudo` too.
+Every directory must be at least two levels below `/`, outside this
+repository, and must not contain it. configure changes the mode or owner of an
+existing directory only when it is empty, holds only the files configure
+itself writes or the answers name, or already has mode 0700 and the configured
+owner.
 
 The answers file is one JSON object keyed by the names below:
 
@@ -33,7 +38,8 @@ The answers file is one JSON object keyed by the names below:
 
 The engine keeps its receiver input options, outputs, and `source_instance`
 for the life of the state directory. It refuses to start if they change later.
-Settle the Receiver, Providers, and Identity answers before the first start.
+Settle the Receiver and Providers answers and `source_instance` before the
+first start; `uid`, `gid`, and the Runtime answers can change later.
 `configure` refuses such a change once state exists.
 
 ## Receiver
@@ -48,7 +54,7 @@ Settle the Receiver, Providers, and Identity answers before the first start.
 
 | Key | Type | Default | Validation | Why |
 | --- | --- | --- | --- | --- |
-| `state_dir` | path | `/srv/wtf-adsb/state` | An absolute path outside this repository, using letters, digits, `.`, `_`, `-`, and `/`. It must be separate from the other directories and not inside one of them. | Holds the engine database and the receiver journal. Back it up. |
+| `state_dir` | path | `/srv/wtf-adsb/state` | An absolute path at least two levels below `/`, outside this repository and not containing it, using letters, digits, `.`, `_`, `-`, and `/`. It must be separate from the other directories and not inside one of them. | Holds the engine database and the receiver journal. Back it up. |
 | `feed_dir` | path | `/srv/wtf-adsb/feed` | The same rules as `state_dir`. | The engine writes `manifest.json` and feed batches here for consumers. |
 | `reference_dir` | path | `/srv/wtf-adsb/references` | The same rules as `state_dir`. | `configure` copies the bundled reference tables here, and Compose mounts it read-only. |
 
@@ -82,5 +88,5 @@ Every provider is off by default. Turn one on only when the user asks for it.
 | `poll_interval_seconds` | number | `60` | 0.1 to 3600. | The wait between analysis and export passes. Collection runs on its own at `receiver.poll_seconds`. |
 | `image` | string | `wtf-adsb-engine:local` | A Docker image reference. | The image both services run. `make image` builds the default; a published image tag also works. |
 | `memory_limit` | string | `2g` | A whole number followed by `b`, `k`, `m`, or `g`. | The Compose memory limit for the engine. |
-| `viewer` | boolean | `true` | `true` or `false`. | Starts the private viewer. It listens on port 8080 inside the Compose network and publishes no host port. |
+| `viewer` | boolean | `true` | `true` or `false`. | Starts the private viewer. It listens on port 8080 inside the Compose network and publishes no host port. When false, deploy stops and removes a running viewer. |
 | `viewer_memory_limit` | string | `512m` | The same rules as `memory_limit`. | The Compose memory limit for the viewer. |
