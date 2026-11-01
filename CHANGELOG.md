@@ -101,6 +101,15 @@ initial development version and does not announce a published release.
   (already enforced by `privacy()`), `context.novelty`, and `media` to Python
   checks with the same rules. The published schemas are unchanged.
   `tools/fuzz_wire.py` compares its verdicts with the complete schema.
+- Delivery and validation do less repeated work with the same batches and
+  digests. `wire.privacy()` checks scalars inline and remembers accepted keys
+  and short strings, refusing exactly what it refused before (a differential
+  test compares error text over mutations). `wire.observation_digest()`
+  validates an observation and returns its evidence digest from the same
+  encoding, which the outbox commit and batch validation now use. Output
+  delivery hands the format the store's own fresh batch instead of a deep copy
+  and compares the artifact with the envelope the store saved, without a second
+  parse when the artifact is that envelope.
 - The Compose template gives the engine and viewer a 512 MiB `/tmp` tmpfs
   instead of 64 MiB. SQLite sorts the retained journal in temporary files there,
   and a full journal failed every collection pass with "database or disk is

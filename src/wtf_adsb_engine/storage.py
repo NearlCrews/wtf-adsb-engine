@@ -110,10 +110,11 @@ class Store:
         stamp = wire.utc(timestamp)
         prepared = []
         for observation in observations:
-            wire.validate_observation(observation.data)
+            # Validation and the evidence digest read one canonical encoding.
+            digest = wire.observation_digest(observation.data)
             if not isinstance(observation.key, str) or not observation.key or len(observation.key) > 1000:
                 raise ValueError("Observation requires a stable private source key")
-            prepared.append((observation.key, observation.data, wire.digest(observation.data)))
+            prepared.append((observation.key, observation.data, digest))
         prepared_keys = {row[0] for row in prepared}
         if len(prepared_keys) != len(prepared):
             raise ValueError("Duplicate observation identity in one transaction")
@@ -306,6 +307,13 @@ class Store:
             }
 
     def next_batch(self, cursor):
+        pending = self.next_envelope(cursor)
+        return pending[0] if pending else None
+
+    def next_envelope(self, cursor):
+        """The next batch after the cursor and its saved canonical envelope (bytes), or None.
+
+        The batch is a fresh object on every call, which the caller may hand on."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             assigned = db.execute(
@@ -314,7 +322,7 @@ class Store:
             if assigned:
                 if assigned["sequence_start"] != cursor + 1:
                     raise ValueError("Output checkpoint is inside an assigned batch")
-                return json.loads(assigned["envelope"])
+                return json.loads(assigned["envelope"]), assigned["envelope"].encode()
             rows = db.execute(
                 "SELECT change,producer FROM changes WHERE sequence>? ORDER BY sequence LIMIT 100", (cursor,)
             ).fetchall()
@@ -367,11 +375,12 @@ class Store:
                 },
                 allow_synthetic=state["synthetic"],
             )
+            envelope = wire.canonical(batch)
             db.execute(
                 "INSERT INTO batches VALUES (?,?,?)",
-                (batch["sequence_start"], batch["sequence_end"], wire.canonical(batch).decode()),
+                (batch["sequence_start"], batch["sequence_end"], envelope.decode()),
             )
-            return batch
+            return batch, envelope
 
     def artifact(self, destination, sequence):
         with self.connect() as db:

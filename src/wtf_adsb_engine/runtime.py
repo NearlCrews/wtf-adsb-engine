@@ -418,17 +418,22 @@ class Runtime:
             cursor = self.store.cursor(name)
             context = self.context("outputs/" + name)
             format_context = self.context("formats/" + name)
-            while batch := self.store.next_batch(cursor):
-                artifact = self.store.artifact(name, batch["sequence_start"])
+            while pending := self.store.next_envelope(cursor):
+                # The store's batch is a fresh object, so the formatter may keep or change it;
+                # the saved canonical envelope is what its artifact must still encode.
+                batch, expected = pending
+                start, end = batch["sequence_start"], batch["sequence_end"]
+                artifact = self.store.artifact(name, start)
                 if artifact is None:
-                    artifact = formatter.encode(copy.deepcopy(batch), format_context)
-                    if not isinstance(artifact, bytes) or wire.canonical(
-                        wire.loads(artifact)
-                    ) != wire.canonical(batch):
+                    artifact = formatter.encode(batch, format_context)
+                    # A canonical artifact (the JSON format's) needs no second parse to compare.
+                    if not isinstance(artifact, bytes) or (
+                        artifact != expected + b"\n" and wire.canonical(wire.loads(artifact)) != expected
+                    ):
                         raise ValueError("Output format changed the canonical evidence envelope")
-                    self.store.save_artifact(name, batch["sequence_start"], artifact)
+                    self.store.save_artifact(name, start, artifact)
                 sink.deliver(artifact, self.manifest(), context)
-                cursor = batch["sequence_end"]
+                cursor = end
                 self.store.acknowledged(name, cursor)
             sink.deliver(b"", self.manifest(), context)
             self.store.acknowledged(name, cursor)
