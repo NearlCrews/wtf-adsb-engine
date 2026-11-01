@@ -311,6 +311,19 @@ class AirportContextTests(unittest.TestCase):
             self.assertIsNone(maneuvers.circuit_attributes(points, LIGHT))
             self.assertIn("prolonged_holding", incremental(points))
 
+    def test_a_lone_fix_merges_as_two_identical_copies_do(self):
+        base = {"ts": T0, "lat": LAT0, "lon": LON0, "source": "mlat"}
+        for extra in (
+            {"break_before": False},
+            {"break_before": True, "altitude": 3000, "altitude_reference": "barometric", "speed": 120},
+            {"break_before": False, "speed": None, "note": "x"},
+        ):
+            fix = {**base, **extra}
+            merged = airport_context.merged_fix([fix])
+            self.assertEqual(merged, airport_context.merged_fix([fix, dict(fix)]))
+            self.assertIsNot(merged, fix)
+        self.assertIsNone(airport_context.merged_fix([None]))
+
 
 def hover_track(before=True, after=True, hover_seconds=300):
     track = Track(altitude=1200, speed=100)

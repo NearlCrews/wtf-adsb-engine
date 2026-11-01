@@ -1,6 +1,7 @@
 """Type speed norms: a population baseline from performance_samples, never a limit, exported per finding."""
 
 import json
+import random
 import sqlite3
 import tempfile
 import unittest
@@ -110,6 +111,54 @@ def type_check(state, listed):
         "registration": "N1",
         "listed_type": listed,
     }
+
+
+class IndexedNorms(unittest.TestCase):
+    """export's per-export norm index gives selection.type_norm's results exactly."""
+
+    def test_the_indexed_norm_equals_the_unindexed_one(self):
+        db = sqlite3.connect(":memory:")
+        selection.initialize(db)
+        base = 1_760_000_000
+        addresses = [f"a{n:05x}" for n in range(60)]
+        draw = random.Random(5)
+        for n in range(3000):
+            # A skewed address choice gives some addresses many encounters.
+            address = addresses[min(int(draw.expovariate(1 / 15)), 59)]
+            typecode, phase = (
+                draw.choice(("B738", "A320", "C560")),
+                draw.choice(("climb", "descent", "level")),
+            )
+            band, day = draw.randrange(3), draw.randrange(25)
+            # Medians on a coarse grid make weighted ties.
+            speeds = [300 + 5 * draw.randrange(30)] * 5
+            db.execute(
+                SAMPLE,
+                (typecode, phase, band, address, base + day * DAY + n, json.dumps(speeds), base + day * DAY),
+            )
+        # A thin context, below the address minimum once its own address is left out.
+        for n in range(20):
+            db.execute(
+                SAMPLE,
+                ("E75L", "level", 3, f"e{n:05x}", base + n * DAY, json.dumps([420] * 5), base + n * DAY),
+            )
+        rows = selection.sample_rows(db)
+        contexts = selection.norm_contexts(db, rows)
+        norms = export._TypeNorms(db, rows, None, NOW)
+        checked = 0
+        for typecode in ("B738", "A320", "C560", "E75L", "ZZZZ", None):
+            for phase in ("climb", "descent", "level"):
+                for band in range(5):
+                    for address in (*addresses[:12], "e00003", "zzzzzz", None):
+                        expected = selection.type_norm(contexts, typecode, (phase, band), address)
+                        # Twice: the second answer comes from the cache.
+                        for _ in range(2):
+                            self.assertEqual(norms.compute(typecode, (phase, band), address), expected)
+                        checked += expected is not None
+        self.assertEqual(norms.compute("B738", None, "zzzzzz"), None)
+        self.assertGreater(checked, 100)
+        self.assertIsNone(norms.compute("E75L", ("level", 3), "e00003"))
+        self.assertIsNotNone(norms.compute("E75L", ("level", 3), "zzzzzz"))
 
 
 def record(db, address, kind, typecode, altitude, rate, value=640, at=NOW):

@@ -9,9 +9,12 @@ the result. The profile is versioned independently of the plugin SDK.
 import json
 import re
 import sqlite3
+from bisect import bisect_left
+from collections import Counter, defaultdict
 from contextlib import closing, nullcontext
 from datetime import datetime, timezone
 from functools import lru_cache
+from itertools import accumulate
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid5
@@ -72,17 +75,20 @@ def _array(project, maximum):
 
 
 def _object(fields):
+    order = {key: index for index, key in enumerate(fields)}
+
     def apply(value):
         if not isinstance(value, dict):
             return _MISSING
+        # The allowed keys the value has, in declaration order; a track point holds a few
+        # of the many declared point fields.
+        present = sorted((key for key in value if key in order), key=order.__getitem__)
         result = {}
-        for key, project in fields.items():
-            if key not in value:
-                continue
+        for key in present:
             if value[key] is None:
                 result[key] = None
                 continue
-            projected = project(value[key])
+            projected = fields[key](value[key])
             if projected is not _MISSING:
                 result[key] = projected
         return result
@@ -688,11 +694,84 @@ class _TypeNorms:
         self.connection, self.rows, self.identities = connection, rows, identities
         self.quiet_before = now - selection.QUIET_SECONDS
         self.contexts = None
+        self.indexed, self.norms = {}, {}
 
-    def compute(self, typecode, phase_band, address):
+    def _index(self, key):
+        """One context's entries as selection.type_norm reads them, prepared once per export:
+        medians and weights in percentile order, each address's positions in that order, and
+        the entries per UTC day, overall and per address."""
         if self.contexts is None:
             self.contexts = selection.norm_contexts(self.connection, self.rows)
-        return selection.type_norm(self.contexts, typecode, phase_band, address)
+        entries = self.contexts.get(key, ())
+        by_address = Counter(address for address, _, _ in entries)
+        ordered = sorted(
+            ((median, 1 / by_address[address], address, encounter) for address, encounter, median in entries),
+            key=lambda item: item[:2],
+        )
+        positions, days, address_days = defaultdict(list), Counter(), defaultdict(Counter)
+        for position, (_, _, address, encounter) in enumerate(ordered):
+            positions[address].append(position)
+            if number(encounter) is not None:
+                day = datetime.fromtimestamp(encounter, timezone.utc).date()
+                days[day] += 1
+                address_days[address][day] += 1
+        return {
+            "medians": [item[0] for item in ordered],
+            "weights": [item[1] for item in ordered],
+            "positions": positions,
+            "days": days,
+            "address_days": address_days,
+        }
+
+    @staticmethod
+    def _percentile(medians, weights, share):
+        """selection._weighted_percentile over entries already in its order: the same total
+        (sum) and running sums (accumulate adds in the same order), found by bisection."""
+        cumulative = list(accumulate(weights))
+        index = bisect_left(cumulative, share * sum(weights) - 1e-9)
+        return medians[min(index, len(medians) - 1)]
+
+    def compute(self, typecode, phase_band, address):
+        """selection.type_norm(contexts, typecode, phase_band, address), from the prepared index.
+
+        Leaving one address out removes only its entries: every other address keeps its
+        weight, so the remaining entries keep their percentile order and sums.
+        """
+        if not typecode or not phase_band:
+            return None
+        phase, band = phase_band
+        key = (typecode, phase, band)
+        if key not in self.indexed:
+            self.indexed[key] = self._index(key)
+        index = self.indexed[key]
+        held = index["positions"].get(address, ())
+        # One answer for every address the context does not hold.
+        cached = (key, address if held else None)
+        if cached not in self.norms:
+            medians, weights = index["medians"], index["weights"]
+            if held:
+                bounds = [-1, *held, len(medians)]
+                spans = [slice(low + 1, high) for low, high in zip(bounds, bounds[1:], strict=False)]
+                medians = [value for span in spans for value in medians[span]]
+                weights = [value for span in spans for value in weights[span]]
+            mine = index["address_days"].get(address, {}) if held else {}
+            days = sum(1 for day, count in index["days"].items() if count > mine.get(day, 0))
+            addresses = len(index["positions"]) - bool(held)
+            norm = None
+            if addresses >= selection.NORM_MIN_ADDRESSES and days >= selection.CONTEXT_DAYS:
+                norm = {
+                    "low": round(self._percentile(medians, weights, 0.1) / 5) * 5,
+                    "high": round(self._percentile(medians, weights, 0.9) / 5) * 5,
+                    "phase": phase,
+                    "band_floor_ft": max(selection.SAMPLE_FLOOR_FT, int(band) * 10000),
+                    "band_ceiling_ft": (int(band) + 1) * 10000,
+                    "addresses": addresses,
+                    "days": days,
+                    "window_days": selection.NORM_WINDOW_DAYS,
+                }
+            self.norms[cached] = norm
+        norm = self.norms[cached]
+        return None if norm is None else dict(norm)
 
     def __call__(self, finding_id, source, last_seen):
         inputs = _norm_inputs(source["evidence"].get("aircraft"), source["hex"])
@@ -717,9 +796,15 @@ def _encounters(connection, now, profiles):
     absorbed row joins the encounter of the shape that absorbed it, else that
     of a row it was grouped with; one with neither keeps its own group.
     """
-    options = {"ignore_reviews": False, "identity_cooldown": False}
-    groups = selection.encounters(connection, now, profiles, **options)
+    # The journal rows are read once. The widened grouping runs first, so each row that
+    # selection leaves in ends with the selection the narrow grouping gives it.
+    options = {
+        "ignore_reviews": False,
+        "identity_cooldown": False,
+        "rows": list(selection._rows(connection, now)),
+    }
     widened = selection.encounters(connection, now, profiles, include_absorbed=True, **options)
+    groups = selection.encounters(connection, now, profiles, **options)
     order = {event["id"]: index for index, event in enumerate(e for g in widened for e in g["events"])}
     owner = {event["id"]: group for group in groups for event in group["events"]}
     orphans = []

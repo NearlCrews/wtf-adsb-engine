@@ -90,6 +90,12 @@ initial development version and does not announce a published release.
   start come from the findings selection keeps, as the original application's
   publisher reads them, and an absorbed finding still travels in its
   encounter's group. Groups with absorbed findings get one new revision.
+- A full collection projection is faster with byte-identical output. Type norms
+  come from a per-export index of each type's samples, built once, instead of
+  re-reading and re-sorting the type's samples for every finding. The two
+  encounter groupings share one read of the journal rows. A lone fix skips the
+  same-time merge (`airport_context.merged_fix`), and the evidence projection
+  visits only the fields a value holds.
 - The Compose template gives the engine and viewer a 512 MiB `/tmp` tmpfs
   instead of 64 MiB. SQLite sorts the retained journal in temporary files there,
   and a full journal failed every collection pass with "database or disk is

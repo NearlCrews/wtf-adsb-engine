@@ -111,6 +111,9 @@ def merged_fix(copies):
     """
     if any(copy is None for copy in copies):
         return None
+    if len(copies) == 1:
+        # Nearly every fix: a lone copy cannot conflict or disagree with itself.
+        return {**copies[0], "break_before": bool(copies[0]["break_before"])}
     ordered = sorted(copies, key=lambda copy: (copy["lat"], copy["lon"]))
     first = ordered[0]
     if any(

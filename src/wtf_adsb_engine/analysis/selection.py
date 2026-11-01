@@ -696,11 +696,13 @@ def _rows(db, now, limit=None):
 
 
 def encounters(
-    db, now, profiles=None, ignore_reviews=False, *, identity_cooldown=True, include_absorbed=False
+    db, now, profiles=None, ignore_reviews=False, *, identity_cooldown=True, include_absorbed=False, rows=None
 ):
+    """Findings grouped by encounter. `rows` are _rows(db, now) when a caller groups the
+    same view twice (export); each call sets every event's selection afresh."""
     profiles = performance_profiles(db) if profiles is None else profiles
     groups, latest, started, promoted = [], {}, {}, {}
-    for event in _rows(db, now):
+    for event in _rows(db, now) if rows is None else rows:
         if curation.absorbed(event) and not include_absorbed:
             # A shape a later circle or survey grid covers is never a separate reason.
             continue
