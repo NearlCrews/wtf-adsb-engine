@@ -51,6 +51,7 @@ class ReceiverService(Lifecycle):
         self.enrichment_error = None
         self.collector = None
         self.last_attempt = None
+        self.last_success = None
 
     def initialize(self, context):
         from ..analysis.flightaware import Settings, money
@@ -84,6 +85,7 @@ class ReceiverService(Lifecycle):
             batch = self.input.poll(None, replace(self.context, now=now))
             self.collector.process(batch.records[0]["snapshot"], wall_now=now)
             self.error = None
+            self.last_success = time.time()
         except Exception as error:
             self.error = type(error).__name__
         finally:
@@ -102,26 +104,40 @@ class ReceiverService(Lifecycle):
                 self.enrichment_error = type(error).__name__
             self.stop.wait(5)
 
+    @property
+    def max_age(self):
+        return self.settings.get("max_age_seconds", 120)
+
     def poll(self, checkpoint, context):
-        if self.error:
-            raise ValueError("Receiver collection is unavailable")
         health = self.collector.health()
         if health["detector_errors"]:
             raise ValueError("Receiver analysis is incomplete")
+        # The committed journal's age decides availability. One failed attempt between
+        # successful ones (a busy journal, a slow receiver) keeps the fresh evidence usable
+        # instead of failing the whole projection pass until the next attempt succeeds.
         watermark = health["last_receiver_timestamp"]
-        if watermark is None or not 0 <= context.now - watermark <= self.settings.get("max_age_seconds", 120):
-            raise ValueError("Receiver collection is stale")
+        if watermark is None or not 0 <= context.now - watermark <= self.max_age:
+            raise ValueError(
+                "Receiver collection is unavailable" if self.error else "Receiver collection is stale"
+            )
         return InputBatch(
             ({"type": "legacy_journal", "path": str(self.collector.path)},), watermark, watermark
         )
 
     def health(self):
+        now = time.time()
+        fresh = self.last_success is not None and 0 <= now - self.last_success <= self.max_age
+        state = "ready"
+        if self.error and not fresh:
+            state = "failed"
+        elif self.error or self.enrichment_error:
+            state = "degraded"
         return {
             "alive": bool(self.workers)
             and all(worker.is_alive() for worker in self.workers)
             and self.last_attempt is not None
-            and 0 <= time.time() - self.last_attempt <= 180,
-            "state": "failed" if self.error else "degraded" if self.enrichment_error else "ready",
+            and 0 <= now - self.last_attempt <= 180,
+            "state": state,
             "collection_error": self.error,
             "enrichment_error": self.enrichment_error,
         }

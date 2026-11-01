@@ -114,6 +114,12 @@ initial development version and does not announce a published release.
   instead of 64 MiB. SQLite sorts the retained journal in temporary files there,
   and a full journal failed every collection pass with "database or disk is
   full".
+- The continuous receiver input no longer fails a projection pass because its
+  latest ten-second collection attempt failed. The committed journal's age
+  decides availability, as it already decided staleness, so one busy-journal or
+  slow-receiver attempt between successful ones leaves readiness intact. Health
+  reports such an attempt as degraded and reports failed only once the last
+  success is older than the configured maximum age.
 
 ### Known limits
 

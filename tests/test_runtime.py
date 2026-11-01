@@ -566,6 +566,32 @@ class RuntimeTests(unittest.TestCase):
         self.assertGreater(len(calls), 1)
         self.assertIsNone(service.error)
 
+    def test_receiver_tolerates_one_failed_attempt_while_the_journal_is_fresh(self):
+        service = ReceiverService({"url": "http://127.0.0.1/fixture", "poll_seconds": 60})
+        context = Context("receiver", self.root, "fixture", time.time())
+
+        def poll(checkpoint, current):
+            return InputBatch(({"snapshot": {"now": current.now, "aircraft": []}},), current.now, current.now)
+
+        with patch.object(service.input, "poll", side_effect=poll):
+            try:
+                service.initialize(context)
+                self.assertEqual(service.health()["state"], "ready")
+                service.error = "OperationalError"
+                batch = service.poll(None, replace(context, now=time.time()))
+                self.assertIsNotNone(batch.watermark)
+                self.assertEqual(service.health()["state"], "degraded")
+                self.assertEqual(service.health()["collection_error"], "OperationalError")
+                with self.assertRaisesRegex(ValueError, "unavailable"):
+                    service.poll(None, replace(context, now=time.time() + 121))
+                service.last_success = time.time() - 121
+                self.assertEqual(service.health()["state"], "failed")
+                service.error = None
+                with self.assertRaisesRegex(ValueError, "stale"):
+                    service.poll(None, replace(context, now=time.time() + 121))
+            finally:
+                service.close()
+
 
 if __name__ == "__main__":
     unittest.main()
