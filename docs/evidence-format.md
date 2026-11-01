@@ -78,6 +78,11 @@ selects the evidence fields and removes receiver data. Known quality flags and
 unknown blocking conditions remain holds. A schema pass alone does not establish
 that a measurement is true or authorize publication.
 
+A group's interval and start come from its selectable findings. A shape that a
+later circle or survey grid covers stays in that encounter's group, marked
+superseded, without widening the interval; one whose encounter has no other
+finding left keeps a group of its own.
+
 `context.type_norms` (contract 1.1.0) carries, for each seasonal speed record and
 type speed mismatch in the group, the type's usual ground speed in these records:
 the tenth and ninetieth percentiles of per-address encounter medians in the
@@ -87,9 +92,10 @@ addresses over 14 days; otherwise the entry is null. The object is keyed by
 finding ID and is absent when the group has no such finding, so other
 observations are unchanged from 1.0.0. A norm is a population figure from one
 collection, never a limit or a claim about one aircraft. While a group is
-active its norms follow the sample window. The first export after the group turns
-quiet (30 minutes without reports) freezes each finding's norm in the identity
-sidecar with the type, phase, band, and address it read; later exports reuse it
+active, or while a pending or failed second-source type check holds the finding,
+its norm follows the sample window. The first export after the group turns quiet
+(30 minutes without reports) with no such hold freezes each finding's norm in the
+identity sidecar with the type, phase, band, and address it read; later exports reuse it
 while those stay the same, so the moving window does not issue a new revision on
 every pass. A replacement restored after source retention keeps the norms of its
 saved evidence. Upgrading an existing 1.0.0 stream issues one revision for each

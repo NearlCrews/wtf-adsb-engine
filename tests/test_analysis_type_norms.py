@@ -8,7 +8,7 @@ from contextlib import closing
 from pathlib import Path
 
 from wtf_adsb_engine import wire
-from wtf_adsb_engine.analysis import app, curation, export, rules, selection
+from wtf_adsb_engine.analysis import app, curation, export, rules, selection, typecheck
 
 # The journal's own sample table (selection.initialize), filled in this column order.
 SAMPLE = (
@@ -99,11 +99,26 @@ class TypeNorms(unittest.TestCase):
             self.assertEqual(selection.norm_contexts(db), {})
 
 
+def type_check(state, listed):
+    """A second-source check block (typecheck.check_evidence, or failure_evidence when failed)."""
+    if state == "failed":
+        return typecheck.failure_evidence(NOW)
+    return {
+        "state": state,
+        "source": "test",
+        "type_code": listed,
+        "registration": "N1",
+        "listed_type": listed,
+    }
+
+
 def record(db, address, kind, typecode, altitude, rate, value=640, at=NOW):
     aircraft = {"hex": address, "r": "N1", "t": typecode, "type": "adsb_icao", "alt_baro": altitude}
     aircraft.update(baro_rate=rate, gs=value)
     finding = rules.Finding(kind, "performance", "", value, "kn", "", "", 80)
-    return app.record(db, aircraft, finding, at, at + 60, hits=6, extra={"encounter_start": at})
+    # The second-source check agrees, so curation.type_hold holds nothing.
+    extra = {"encounter_start": at, "type_check": type_check("agrees", typecode)}
+    return app.record(db, aircraft, finding, at, at + 60, hits=6, extra=extra)
 
 
 def samples(db, typecode, phase, band, speeds, *, days, end=NOW, prefix="b"):
@@ -245,6 +260,33 @@ class ExportedNorms(unittest.TestCase):
         _, kept = self.norms(later, self.sidecar)["seasonal_speed_record:B738"]
         unsaved, fresh = self.norms(later)["seasonal_speed_record:B738"]
         self.assertEqual((kept[identifier]["low"], fresh[unsaved]["low"]), (505, 605))
+
+    def set_check(self, state):
+        with app.connect(self.path) as db:
+            db.execute(
+                "UPDATE events SET evidence=json_set(evidence,'$.type_check',json(?)) WHERE hex='abcdef'",
+                (json.dumps(type_check(state, "B738")),),
+            )
+
+    def test_a_held_finding_freezes_its_norm_once_its_type_check_clears(self):
+        # A type check outage holds the record (curation.type_hold) after its group turns quiet.
+        self.set_check("failed")
+        identifier, held = self.norms(QUIET, self.sidecar)["seasonal_speed_record:B738"]
+        self.assertEqual(held[identifier]["low"], 425)
+        self.assertIsNone(self.saved(identifier))
+        # While held it follows the window, as the legacy pass stages nothing before selection.
+        self.move_window()
+        later = NOW + 40 * DAY
+        _, moved = self.norms(later, self.sidecar)["seasonal_speed_record:B738"]
+        self.assertEqual(moved[identifier]["low"], 505)
+        self.assertIsNone(self.saved(identifier))
+        # The check clears: that export saves the window it reads, and later ones reuse it.
+        self.set_check("agrees")
+        _, cleared = self.norms(later, self.sidecar)["seasonal_speed_record:B738"]
+        self.assertEqual(self.saved(identifier), cleared[identifier])
+        self.move_window(days=80, base=600, prefix="e")
+        _, kept = self.norms(NOW + 80 * DAY, self.sidecar)["seasonal_speed_record:B738"]
+        self.assertEqual(kept[identifier]["low"], 505)
 
     def test_a_changed_type_is_not_given_the_saved_norm(self):
         self.norms(QUIET, self.sidecar)

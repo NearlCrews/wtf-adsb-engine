@@ -4,8 +4,9 @@ Legacy row numbers stay inside this sidecar. Public finding/group identities are
 random UUIDs. Membership and saved encounter aliases preserve identities when a
 correction changes an interval. Witnessed membership merges and splits issue
 explicit durable supersessions; simple interval corrections keep their IDs.
-The sidecar also keeps each norm-kind finding's type norm from its group's first
-quiet export, which later exports reuse (export.py).
+The sidecar also keeps each norm-kind finding's type norm from the first export
+at which its group is quiet and no type check holds it; later exports reuse it
+(export.py).
 """
 
 import json
@@ -139,16 +140,17 @@ class IdentityStore:
         self.rows.add(local_id)
         return identity
 
-    def type_norm(self, finding_id, inputs, quiet, compute):
-        """A finding's type norm, frozen at its group's first quiet export.
+    def type_norm(self, finding_id, inputs, settled, compute):
+        """A finding's type norm, frozen at the first export that finds it settled.
 
-        While the group is active, compute() and save nothing. Once it is quiet, reuse the
-        saved norm while it reads the same type, phase, band, and address; otherwise
-        compute(), save it with those inputs, and reuse it from then on. A drifting sample
-        window then changes no quiet group's revision.
+        Settled means its group is quiet and no type check holds the finding. Until then,
+        compute() and save nothing. Once settled, reuse the saved norm while it reads the
+        same type, phase, band, and address; otherwise compute(), save it with those
+        inputs, and reuse it from then on. A drifting sample window then changes no
+        settled group's revision.
         """
         self.norm_findings.add(finding_id)
-        if not quiet:
+        if not settled:
             return compute()
         key = _canonical(inputs)
         row = self.db.execute(

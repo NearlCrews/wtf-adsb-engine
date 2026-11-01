@@ -1834,6 +1834,17 @@ class Detector:
         absorbed = ABSORBED_KINDS[shape.kind]
         if start is None or end is None or session is None:
             return
+        # The native journal keeps reviews only; a journal from the original
+        # application also keeps notes and drafts. Ask only the tables present.
+        review_tables = [
+            name
+            for (name,) in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('notes','story_drafts','event_reviews')"
+            )
+        ]
+        attached_query = " UNION ALL ".join(
+            f"SELECT 1 FROM {name} WHERE event_id=?" for name in sorted(review_tables)
+        )
         rows = db.execute(
             f"""SELECT id,kind,evidence,last_seen FROM events WHERE hex=? AND kind IN ({",".join("?" * len(absorbed))})
             AND origin=? AND last_seen>=? AND first_seen<=? AND json_extract(evidence,'$.encounter_start')=?""",
@@ -1848,11 +1859,10 @@ class Detector:
             last = number(block.get("turn_ended_at", block.get("ended_at")))
             if first is None or last is None or last <= start or first >= end:
                 continue
-            attached = db.execute(
-                """SELECT 1 FROM notes WHERE event_id=? UNION ALL SELECT 1 FROM story_drafts WHERE event_id=?
-                UNION ALL SELECT 1 FROM event_reviews WHERE event_id=? LIMIT 1""",
-                (row["id"],) * 3,
-            ).fetchone()
+            attached = (
+                attached_query
+                and db.execute(f"{attached_query} LIMIT 1", (row["id"],) * len(review_tables)).fetchone()
+            )
             if attached or row["last_seen"] < now - selection.QUIET_SECONDS:
                 evidence["absorbed_by"] = {"kind": shape.kind, "event_id": shape_id}
                 db.execute("UPDATE events SET evidence=? WHERE id=?", (json.dumps(evidence), row["id"]))

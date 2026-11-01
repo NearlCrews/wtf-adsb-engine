@@ -43,8 +43,9 @@ initial development version and does not announce a published release.
   being held by it, and selection derives per-type ground-speed norms.
 - Evidence contract 1.1.0 adds an optional `context.type_norms` object: for
   each seasonal speed record or type speed mismatch, its type's usual ground
-  speed in these records, or null. A finding's norm is frozen at its group's
-  first quiet export, so the moving sample window issues no new revisions.
+  speed in these records, or null. A finding's norm is frozen at the first
+  export at which its group is quiet and no pending or failed type check holds
+  it, so the moving sample window issues no new revisions.
   Upgrading an existing 1.0.0 stream issues one revision for each group with a
   norm-kind finding still in the journal view. Producers
   write 1.1.0; readers accept 1.0.0 and 1.1.0 and refuse other versions by name.
@@ -80,6 +81,15 @@ initial development version and does not announce a published release.
 - Manual retractions acquire the engine lock without loading or starting plugins.
 - Unchanged identity snapshots avoid database row rewrites; failed identity-store
   initialization releases its SQLite connection and any acquired writer lock.
+- Native collection no longer fails when a circle or survey grid absorbs an
+  earlier pattern row: the absorption check asks only the review tables the
+  journal has (the native journal keeps reviews, not the original application's
+  notes and drafts). Before, every confirming poll rolled back and the circle
+  was never recorded.
+- An absorbed row no longer widens its exported group: a group's interval and
+  start come from the findings selection keeps, as the original application's
+  publisher reads them, and an absorbed finding still travels in its
+  encounter's group. Groups with absorbed findings get one new revision.
 
 ### Known limits
 

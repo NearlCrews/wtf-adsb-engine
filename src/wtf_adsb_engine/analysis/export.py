@@ -679,7 +679,9 @@ class _TypeNorms:
 
     The sample rows are read once per export, as autopilot.collect reads them, and the
     contexts only when a norm-kind finding needs them. With an identity sidecar, a finding
-    keeps the norm of its group's first quiet export (IdentityStore.type_norm).
+    keeps the norm of the first export at which its group is quiet and curation.type_hold
+    holds it no longer (IdentityStore.type_norm): the legacy pass stages a norm only when
+    it selects the finding, so a type check outage freezes no older window.
     """
 
     def __init__(self, connection, rows, identities, now):
@@ -692,19 +694,50 @@ class _TypeNorms:
             self.contexts = selection.norm_contexts(self.connection, self.rows)
         return selection.type_norm(self.contexts, typecode, phase_band, address)
 
-    def __call__(self, finding_id, aircraft, address, last_seen):
-        inputs = _norm_inputs(aircraft, address)
+    def __call__(self, finding_id, source, last_seen):
+        inputs = _norm_inputs(source["evidence"].get("aircraft"), source["hex"])
         if self.identities is None:
             return self.compute(*inputs)
-        return self.identities.type_norm(
-            finding_id, inputs, last_seen <= self.quiet_before, lambda: self.compute(*inputs)
-        )
+        settled = last_seen <= self.quiet_before and curation.type_hold(source) is None
+        return self.identities.type_norm(finding_id, inputs, settled, lambda: self.compute(*inputs))
 
 
 def _with_norms(context, norms):
     """The day context, plus type_norms when the group has a norm-kind finding; the shared
     day context itself is never changed."""
     return {**context, "type_norms": norms} if norms else context
+
+
+def _encounters(connection, now, profiles):
+    """The legacy autopilot's encounters, each with the absorbed rows of its encounter.
+
+    Bounds, start and grouping come from the rows selection leaves in
+    (include_absorbed=False), as autopilot.collect reads them, so an absorbed
+    row never widens the quiet test, the interval or the novelty day. An
+    absorbed row joins the encounter of the shape that absorbed it, else that
+    of a row it was grouped with; one with neither keeps its own group.
+    """
+    options = {"ignore_reviews": False, "identity_cooldown": False}
+    groups = selection.encounters(connection, now, profiles, **options)
+    widened = selection.encounters(connection, now, profiles, include_absorbed=True, **options)
+    order = {event["id"]: index for index, event in enumerate(e for g in widened for e in g["events"])}
+    owner = {event["id"]: group for group in groups for event in group["events"]}
+    orphans = []
+    for wide in widened:
+        absorbed = [event for event in wide["events"] if curation.absorbed(event)]
+        if not absorbed:
+            continue
+        kept = next((owner[event["id"]] for event in wide["events"] if event["id"] in owner), None)
+        left = []
+        for event in absorbed:
+            target = owner.get(event["evidence"]["absorbed_by"].get("event_id")) or kept
+            (left if target is None else target["events"]).append(event)
+        if left:
+            first, last = min(e["first_seen"] for e in left), max(e["last_seen"] for e in left)
+            orphans.append({**wide, "events": left, "first_seen": first, "last_seen": last})
+    for group in groups:
+        group["events"].sort(key=lambda event: order[event["id"]])
+    return sorted([*groups, *orphans], key=lambda group: order[group["events"][0]["id"]])
 
 
 def snapshot(database, now, *, source_instance="receiver", identity_path=None):
@@ -737,14 +770,7 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
             journal_watermark(connection, health_mode)
         # The sample rows feed the spotting thresholds and the type norms; they are read once.
         rows = selection.sample_rows(connection)
-        groups = selection.encounters(
-            connection,
-            now,
-            selection.performance_profiles(connection, rows),
-            ignore_reviews=False,
-            identity_cooldown=False,
-            include_absorbed=True,
-        )
+        groups = _encounters(connection, now, selection.performance_profiles(connection, rows))
         type_norms = _TypeNorms(connection, rows, identities, now)
         novelty = selection.novelty(connection)
 
@@ -784,9 +810,7 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
                 if projected is not None:
                     events.append(projected)
                     if projected["kind"] in curation.NORM_KINDS:
-                        norms[projected["id"]] = type_norms(
-                            projected["id"], full["evidence"].get("aircraft"), full["hex"], group["last_seen"]
-                        )
+                        norms[projected["id"]] = type_norms(projected["id"], full, group["last_seen"])
             if not events:
                 continue
             start = group.get("start") if group.get("start") is not None else group["first_seen"]
