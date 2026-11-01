@@ -163,7 +163,92 @@ def _validator(name):
         # observation validator below, including its semantic/privacy checks.
         # The published batch schema remains complete for other consumers.
         schema["$defs"]["observation"] = {"type": "object"}
+    elif name == "observation-v1.schema.json":
+        # The compiled validator replaces three definitions that a schema walk per value made
+        # slow: jsonValue, because privacy() already enforces its rules (JSON types, finite
+        # numbers, strings of at most 20000 characters, arrays of at most 50000 items), and
+        # context.novelty and media, which _novelty and _media check with the same rules.
+        # The published schemas stay complete for other consumers.
+        schema["$defs"]["jsonValue"] = {}
+        schema["$defs"]["context"]["properties"]["novelty"] = {}
+        schema["$defs"]["media"] = {}
     return Draft202012Validator(schema)
+
+
+UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+TYPE_CODE = re.compile(r"^[A-Z0-9]{2,4}$")
+ALTITUDE_REFERENCES = frozenset({"barometric", "geometric", "unspecified"})
+
+
+def _number(value):
+    """JSON Schema's number: an int or float, never a bool."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _count(value):
+    """JSON Schema's non-negative integer, which includes an integral float."""
+    return (
+        not isinstance(value, bool)
+        and (isinstance(value, int) or (isinstance(value, float) and value.is_integer()))
+        and value >= 0
+    )
+
+
+def _novelty(value):
+    """The published context.novelty definition: null, or day coverage and type-day counts."""
+    if value is None:
+        return
+    if not isinstance(value, dict) or set(value) != {"coverage_days", "type_days"}:
+        raise ValueError("Record does not match the structural contract")
+    counts = value["type_days"]
+    if (
+        not _count(value["coverage_days"])
+        or not isinstance(counts, dict)
+        or not all(TYPE_CODE.search(code) and _count(count) for code, count in counts.items())
+    ):
+        raise ValueError("Record does not match the structural contract")
+
+
+def _media_point(point):
+    if (
+        not isinstance(point, dict)
+        or not {"ts", "lat", "lon", "source"} <= set(point)
+        or not set(point) <= {"ts", "lat", "lon", "source", "speed", "altitude", "altitude_reference"}
+        or not _number(point["ts"])
+        or not (_number(point["lat"]) and -90 <= point["lat"] <= 90)
+        or not (_number(point["lon"]) and -180 <= point["lon"] <= 180)
+        or not (isinstance(point["source"], str) and 1 <= len(point["source"]) <= 160)
+    ):
+        return False
+    speed, altitude = point.get("speed"), point.get("altitude")
+    reference = point.get("altitude_reference")
+    return (
+        (speed is None or (_number(speed) and speed >= 0))
+        and (altitude is None or _number(altitude))
+        and (reference is None or (isinstance(reference, str) and reference in ALTITUDE_REFERENCES))
+    )
+
+
+def _media(value):
+    """The published media definition: map and replay points by finding id."""
+    if not isinstance(value, dict) or not set(value) <= {"by_finding"}:
+        raise ValueError("Record does not match the structural contract")
+    findings = value.get("by_finding", {})
+    if not isinstance(findings, dict):
+        raise ValueError("Record does not match the structural contract")
+    for finding, entry in findings.items():
+        if (
+            not UUID_PATTERN.search(finding)
+            or not isinstance(entry, dict)
+            or set(entry) != {"parts"}
+            or not isinstance(parts := entry["parts"], list)
+            or len(parts) > 12000
+            or not all(
+                isinstance(part, list) and len(part) <= 12000 and all(_media_point(point) for point in part)
+                for part in parts
+            )
+        ):
+            raise ValueError("Record does not match the structural contract")
 
 
 def _structure(name, value):
@@ -185,6 +270,8 @@ def validate_observation(value):
             _VALIDATED_OBSERVATIONS.move_to_end(fingerprint)
             return value
     _structure("observation-v1.schema.json", value)
+    _novelty(value["context"].get("novelty"))
+    _media(value["media"])
     keys(value, ("group", "context", "media"), ("extensions",))
     group = value["group"]
     if not isinstance(group, dict) or not isinstance(group.get("events"), list):

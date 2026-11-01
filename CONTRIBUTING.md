@@ -74,6 +74,14 @@ to [CHANGELOG.md](CHANGELOG.md). Changes to the wire contract, plugin SDK, or
 persisted state need compatibility and recovery notes. Application, SDK, and
 contract versions are separate; see [release maintenance](docs/releasing.md).
 
+`wire.py` is shared with the publisher and must stay byte-identical with its copy
+(`tests/test_shared_digests.py`). The compiled observation validator leaves
+`jsonValue`, `context.novelty`, and `media` to Python checks with the published
+rules. `tests/test_wire_validator.py` compares its verdicts with the complete
+schema over deterministic mutations, and `tools/fuzz_wire.py` does the same over
+seeded random mutations of the example batch, or of a feed directory given with
+`--feed`; it is offline and exits with status 1 on any disagreement.
+
 ## Dependencies and reference data
 
 Use exact dependency pins and update `uv.lock` with the manifest. Check current

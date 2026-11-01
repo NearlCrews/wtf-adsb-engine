@@ -96,6 +96,11 @@ initial development version and does not announce a published release.
   encounter groupings share one read of the journal rows. A lone fix skips the
   same-time merge (`airport_context.merged_fix`), and the evidence projection
   visits only the fields a value holds.
+- Observation validation no longer walks the schema for every value: the
+  shared `wire.py`, taken byte for byte from the publisher, leaves `jsonValue`
+  (already enforced by `privacy()`), `context.novelty`, and `media` to Python
+  checks with the same rules. The published schemas are unchanged.
+  `tools/fuzz_wire.py` compares its verdicts with the complete schema.
 - The Compose template gives the engine and viewer a 512 MiB `/tmp` tmpfs
   instead of 64 MiB. SQLite sorts the retained journal in temporary files there,
   and a full journal failed every collection pass with "database or disk is
