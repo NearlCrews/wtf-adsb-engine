@@ -32,6 +32,11 @@ repository, change into it, and build the image:
 make image
 ```
 
+Released images are also on the GitHub Container Registry, so instead of
+`make image` you can run `docker pull ghcr.io/OWNER/wtf-adsb-engine:v0.1.0` and
+add `ENGINE_IMAGE=ghcr.io/OWNER/wtf-adsb-engine:v0.1.0` to the `engine.env`
+file below.
+
 Create a parent directory your account owns, then four private directories
 owned by UID and GID 1000, the image's default account. Any absolute path works
 in place of `/srv/wtf-adsb`.

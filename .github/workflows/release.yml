@@ -1,0 +1,92 @@
+name: Release engine
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.24"
+          enable-cache: false
+      - run: uv python install
+      - run: uv sync --locked --extra dev --extra archive
+      - name: Check the tag and write the release notes
+        run: |
+          version="$(.venv/bin/python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match project version $version" >&2
+            exit 1
+          fi
+          repository="${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=ghcr.io/$repository:$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          echo "LATEST=ghcr.io/$repository:latest" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/release"
+          .venv/bin/python tools/release_notes.py "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release/notes.md"
+      - run: make check
+        env:
+          UV_OFFLINE: "1"
+      - run: make image IMAGE="$IMAGE"
+      - run: make test-image IMAGE="$IMAGE"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push the image
+        run: |
+          docker tag "$IMAGE" "$LATEST"
+          docker push "$IMAGE"
+          docker push "$LATEST"
+          digest="$(docker buildx imagetools inspect "$IMAGE" | awk '$1 == "Digest:" { print $2; exit }')"
+          if [ -z "$digest" ]; then
+            echo "Could not read the pushed image digest" >&2
+            exit 1
+          fi
+          image="${IMAGE%:*}@$digest"
+          {
+            echo "## Container image"
+            echo
+            echo "- Tags: \`$IMAGE\`, \`$LATEST\`"
+            echo "- Digest: \`$image\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo
+            echo "### Container image"
+            echo
+            echo "\`$image\`, also tagged \`$IMAGE\` and \`$LATEST\`."
+          } >> "$RUNNER_TEMP/release/notes.md"
+      - name: Extract the image inventories
+        run: |
+          container="$(docker create "$IMAGE")"
+          trap 'docker rm "$container" > /dev/null' EXIT
+          for name in build.json packages.json; do
+            docker cp "$container:/usr/local/share/wtf-adsb-engine/$name" "$RUNNER_TEMP/release/$name"
+          done
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release/notes.md" \
+            "$RUNNER_TEMP/release/build.json" \
+            "$RUNNER_TEMP/release/packages.json" \
+            dist/wtf_adsb_engine-*.tar.gz \
+            dist/wtf_adsb_engine-*.whl

@@ -1,20 +1,22 @@
 # Release maintenance
 
-This guide is for maintainers. The public README installs from a source checkout,
-so it does not depend on a package registry release.
+This guide is for maintainers. The public README builds the image from a source
+checkout and names the released container image as an alternative; no Python
+package is uploaded to a package registry.
 
 ## Repository setup
 
 Before the first public push, choose the canonical GitHub repository and
 replace the `OWNER` placeholder in the `Homepage`, `Source`, `Issues`, and
 `Changelog` entries of the `[project.urls]` table in `pyproject.toml` with its
-owner. The `Example deployment` entry links to wtf-adsb.com and needs no
-change. Configure a private security-reporting channel and a private conduct
+owner. Do the same for the `ghcr.io/OWNER/wtf-adsb-engine` image name in the
+README and in this guide. The `Example deployment` entry links to wtf-adsb.com
+and needs no change. Configure a private security-reporting channel and a private conduct
 contact; keep [SECURITY.md](../SECURITY.md) and
 [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) accurate. GitHub private
 vulnerability reporting requires a repository setting, not just a file.
 
-Enable the check workflow and review dependency update pull requests. Require
+Enable the check and release workflows and review dependency update pull requests. Require
 successful checks on the default branch when the repository's settings support
 it. The repository includes issue and pull request templates. A CODEOWNERS file
 or funding configuration should name actual agreed accounts; neither is needed
@@ -65,9 +67,9 @@ no runtime state or excluded bundles. The wheel metadata includes the public
 README and license expression.
 
 Build the Linux/amd64 container from clean source, then run its offline image
-check. Record the resulting image ID, build-input hash and package inventory.
+check. Record the resulting image ID, build-input hash, and package inventory.
 Review pinned Python/uv image digests along with library updates, and preserve
-dependency license files in derived images. The default workflow builds local
+dependency license files in derived images. The check workflow builds local
 images without publishing or deploying them.
 
 Walk through the [synthetic replay](../DEVELOPMENT.md#try-the-synthetic-replay)
@@ -79,11 +81,39 @@ changes. State known limitations, including missing reference coverage and
 unsupported recovery operations. Record the interpreter and test results used
 for the release.
 
-## Publish deliberately
+## Publish a release
 
-Publishing a repository, creating a release/tag, and uploading a distribution
-are separate maintainer actions. The check workflow does not publish packages
-or deploy a service. Use the chosen repository's release process after review;
-do not invent a registry URL or installation command for a package that has not
-been uploaded. Once artifacts are published, verify the downloaded artifacts
-and update public installation instructions with the actual release locations.
+Publishing a repository and pushing a release tag are separate maintainer
+actions. The check workflow never publishes. When `main` holds the reviewed
+release commit, its checks are green, and `CHANGELOG.md` has a section headed
+with the version (such as `## 0.1.0 (2026-11-01)`), tag and push it:
+
+```sh
+git tag -a v0.1.0 -m "wtf-adsb-engine 0.1.0"
+git push origin v0.1.0
+```
+
+The tag starts `.github/workflows/release.yml`, which uses only the workflow's
+`GITHUB_TOKEN` with `contents: write` and `packages: write`. It:
+
+1. refuses a tag that is not `v` followed by the `pyproject.toml` version, and
+   takes the release notes from the matching changelog section with
+   `tools/release_notes.py`;
+2. runs `make check`, `make image`, and `make test-image`;
+3. pushes the image to `ghcr.io/OWNER/wtf-adsb-engine` as both the version tag
+   (`v0.1.0`) and `latest`, and writes the pushed digest to the job summary and
+   the release notes;
+4. copies `build.json` and `packages.json` out of the image and creates the
+   GitHub release for the tag with those two inventories, the source archive,
+   and the wheel attached.
+
+GitHub derives the image name from the repository, lowercased, so `OWNER` is
+the account or organization that holds the repository. Replace the placeholder
+wherever it appears once the owner is chosen. Every tag moves `latest`, so tag
+only versions meant for general use. A new GHCR package is private until its
+visibility is changed in the package settings; make it public after the first
+release, then pull the tag and compare its digest with the release notes.
+
+A failed run can be rerun from the Actions page. If the release already exists,
+delete it (not the tag) before rerunning; pushing the same image tags again is
+harmless. Do not move a published tag; fix forward with a new version instead.

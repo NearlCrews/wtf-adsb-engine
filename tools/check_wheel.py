@@ -58,6 +58,7 @@ def main():
             "docs/setup-interview.md",
             "tools/check_image.py",
             "tools/check_installed.py",
+            "tools/release_notes.py",
             "tools/setup.py",
             "examples/plugins/reference-label/Dockerfile",
             "examples/plugins/reference-label/Dockerfile.wheel",

@@ -5,8 +5,10 @@ and evidence contract versions are tracked separately.
 
 ## Unreleased
 
-The package currently identifies itself as 0.1.0. This section describes the
-initial development version and does not announce a published release.
+## 0.1.0 (2026-11-01)
+
+The first public release. The package identifies itself as 0.1.0, plugins
+target SDK API version 1, and producers write evidence contract 1.1.0.
 
 ### Added
 
@@ -17,12 +19,12 @@ initial development version and does not announce a published release.
 - Self-contained Linux/amd64 container builds from locked source, including
   archive tools, an unprivileged account and build/package inventories. Offline
   image checks cover replay, viewer assets, restart and installed plugin images.
-- Compose templates and opt-in private
-  FlightAware and fleet-reference configuration.
+- Compose templates and opt-in private FlightAware and fleet-reference
+  configuration.
 - Receiver JSON collection, continuous collection, immutable NDJSON replay, and
   a read-only adapter for compatible analysis journals.
-- Installed-package plugin interfaces for inputs, detectors, reference providers,
-  enrichment, JSON formatting, and delivery destinations.
+- Installed-package plugin interfaces (SDK API version 1) for inputs, detectors,
+  reference providers, enrichment, JSON formatting, and delivery destinations.
 - Versioned collection evidence with stable IDs, revisions, explicit retractions,
   witnessed supersessions, and independent output cursors.
 - Schema and privacy validation, reviewed extension schemas, and an external
@@ -30,17 +32,16 @@ initial development version and does not announce a published release.
 - Private archive freezing, pinned replay, metrics analysis, and compact replay
   importing into journal backups.
 - MIT licensing, public documentation, contributor guidance, offline checks,
-  source and wheel builds, and a GitHub Actions check workflow.
+  source and wheel builds, a GitHub Actions check workflow, and a tagged release
+  workflow that publishes the container image to the GitHub Container Registry.
 
 ### Changed
 
-- The analysis modules were resynced with the original application's analysis
-  as of 31 October 2026 by three-way merge from the 9 October extraction, keeping
-  every fix listed below. A kind registry (`analysis/kinds.py`) and the
-  enrichment rules the facts layer reads (`analysis/enrichment_rules.py`) now
-  define the kind tables. Curation holds a repeated kind on one airframe for 30
-  days, a type speed mismatch names a disagreeing registry's type instead of
-  being held by it, and selection derives per-type ground-speed norms.
+- A kind registry (`analysis/kinds.py`) and the enrichment rules the facts layer
+  reads (`analysis/enrichment_rules.py`) define the kind tables. Curation holds a
+  repeated kind on one airframe for 30 days, a type speed mismatch names a
+  disagreeing registry's type instead of being held by it, and selection derives
+  per-type ground-speed norms.
 - Evidence contract 1.1.0 adds an optional `context.type_norms` object: for
   each seasonal speed record or type speed mismatch, its type's usual ground
   speed in these records, or null. A finding's norm is frozen at the first
@@ -50,21 +51,18 @@ initial development version and does not announce a published release.
   norm-kind finding still in the journal view. Producers
   write 1.1.0; readers accept 1.0.0 and 1.1.0 and refuse other versions by name.
   The `wtf-adsb.collection.v1` profile is unchanged.
-- Python 3.14.9 (including the container base image), Ruff 0.17.2, and NumPy
-  2.5.4.
+- Python 3.14.9 (including the container base image), uv 0.12.24, Ruff 0.17.2,
+  and NumPy 2.5.4.
 
 ### Fixed
 
-- Container build tooling uses uv 0.12.24, verified against its stable upstream
-  release on 9 October 2026. (Development checks then used Ruff 0.17.0; see
-  Changed for the current pin.)
 - Repeated daily novelty context shares memory within a projection. Runtime
   copying preserves that sharing while isolating each observation's enrichment.
 - Reference loading enforces its size bound during the read. Invalid oversized
   numeric measurements are rejected without an arithmetic exception, and failed
   journal connection setup releases its database handle.
 - Unchanged observations and retractions read only the stored revision fields
-  they need. Documentation checks now include package and maintenance guides.
+  they need.
 - Journal inputs hold incomplete or failed analysis, and collection projections
   recheck health in the same read transaction as the evidence. Completed archive
   imports can use recorded aircraft timestamps without live receiver metadata.
@@ -83,13 +81,12 @@ initial development version and does not announce a published release.
   initialization releases its SQLite connection and any acquired writer lock.
 - Native collection no longer fails when a circle or survey grid absorbs an
   earlier pattern row: the absorption check asks only the review tables the
-  journal has (the native journal keeps reviews, not the original application's
-  notes and drafts). Before, every confirming poll rolled back and the circle
-  was never recorded.
+  journal has. Before, every confirming poll rolled back and the circle was
+  never recorded.
 - An absorbed row no longer widens its exported group: a group's interval and
-  start come from the findings selection keeps, as the original application's
-  publisher reads them, and an absorbed finding still travels in its
-  encounter's group. Groups with absorbed findings get one new revision.
+  start come from the findings selection keeps, as the publisher reads them, and
+  an absorbed finding still travels in its encounter's group. Groups with
+  absorbed findings get one new revision.
 - A full collection projection is faster with byte-identical output. Type norms
   come from a per-export index of each type's samples, built once, instead of
   re-reading and re-sorting the type's samples for every finding. The two
@@ -97,7 +94,7 @@ initial development version and does not announce a published release.
   same-time merge (`airport_context.merged_fix`), and the evidence projection
   visits only the fields a value holds.
 - Observation validation no longer walks the schema for every value: the
-  shared `wire.py`, taken byte for byte from the publisher, leaves `jsonValue`
+  `wire.py` module shared byte for byte with the publisher leaves `jsonValue`
   (already enforced by `privacy()`), `context.novelty`, and `media` to Python
   checks with the same rules. The published schemas are unchanged.
   `tools/fuzz_wire.py` compares its verdicts with the complete schema.
