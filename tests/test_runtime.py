@@ -615,6 +615,8 @@ class RuntimeTests(unittest.TestCase):
                 )
                 self.assertIsNone(service.failure)
                 self.assertEqual(service.health()["state"], "ready")
+                with self.assertRaisesRegex(ValueError, "stale"):
+                    service.poll(None, replace(context, now=service.collector.detector.last_poll + 121))
             finally:
                 service.close()
 

@@ -94,7 +94,7 @@ class ReceiverService(Lifecycle):
             self.failure = None
         except Exception as error:
             failure = (type(error).__name__, isinstance(error, CollectorFault))
-            # Tolerated attempts leave no other trace; log each new failure class once.
+            # Tolerated attempts leave no other trace; log when the failure class changes.
             if failure != self.failure:
                 LOG.warning("Receiver collection attempt failed (%s)", failure[0])
             self.failure = failure
