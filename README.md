@@ -1,187 +1,133 @@
 # WTF ADS-B Engine
 
-WTF ADS-B Engine collects ADS-B receiver JSON, detects aircraft and flight
-patterns, enriches observations, and exports versioned JSON evidence. It supports
-live collection and offline replay, with installed plugins for inputs, detection,
-reference data, enrichment, formatting, and delivery.
+WTF ADS-B Engine reads the aircraft JSON from an ADS-B receiver (readsb or
+tar1090 style), detects notable aircraft and flight patterns, and writes
+reviewed findings to a versioned JSON feed. A website, alert script, or other
+program can read that feed without importing the engine or opening its
+database. It needs no cloud service or paid account.
 
-Consumers can use the feed for a website, alerts, or another analysis application
-without importing the engine or opening its database. Collection and replay need
-no publishing application, paid AI account, or cloud service.
+[wtf-adsb.com](https://wtf-adsb.com) is an example deployment: a separate
+publisher turns this engine's feed into stories.
 
-Version 0.1.0 is an early development version. The plugin SDK and evidence
-contract have separate versions; see [known limits](#current-limits) before
-connecting a persistent consumer.
+Version 0.1.0 is an early release. Read the
+[current limits](DEVELOPMENT.md#current-limits) before you connect a
+long-running consumer.
 
-## Run with Docker
+## Setup and go
 
-The Linux/amd64 image builds directly from a clean checkout with Docker and GNU
-Make. It includes the engine, archive tools and private factual viewer:
+You configure the engine once and start the container. From then on it polls
+the receiver, keeps its own journal, and delivers new findings to the feed
+directory without supervision. Docker restarts it after a crash or reboot and
+runs its health check every 30 seconds. Upkeep is an occasional image upgrade
+and the health command shown below.
+
+## Quick start with Docker
+
+You need Linux, Docker with Compose, GNU Make, and a receiver whose
+`aircraft.json` the Docker host can reach. Clone this repository, change into
+it, and build the image:
 
 ```sh
 make image
-docker run --rm --network none wtf-adsb-engine:local --version
 ```
 
-The first build downloads pinned base images and locked dependencies. No host
-Python installation or prebuilt wheel is required. The
-[deployment guide](docs/deployment.md) covers persistent mounts, live
-collection, viewer configuration, image checks and derived plugin images. Images
-are built locally; this project does not publish to an image registry.
+Create four private directories owned by UID and GID 1000, the image's default
+account. This example uses `/srv/wtf-adsb`; any absolute path works.
 
-## Try the synthetic replay
+```sh
+sudo install -d -m 0700 -o 1000 -g 1000 \
+  /srv/wtf-adsb/config /srv/wtf-adsb/state /srv/wtf-adsb/feed /srv/wtf-adsb/references
+sudo install -m 0600 -o 1000 -g 1000 examples/receiver.toml /srv/wtf-adsb/config/receiver.toml
+sudo install -m 0644 -o 1000 -g 1000 src/wtf_adsb_engine/analysis/data/*.json /srv/wtf-adsb/references/
+```
 
-Use Linux and [uv](https://docs.astral.sh/uv/getting-started/installation/).
-Python 3.14 or newer is required; the pinned and tested interpreter is 3.14.9.
-Native Windows is unsupported because the runtime uses POSIX file locking.
+Compose points the engine's reference tables at the references directory, so
+the last command copies the bundled tables there. Edit
+`/srv/wtf-adsb/config/receiver.toml` (with `sudo` unless your account is UID
+1000) and change three values:
 
-Clone this repository using its GitHub Code menu, or extract its source archive,
-then change into the project directory. Install and run the offline example:
+- `state_directory = "/state"`
+- the input's `url`, set to your receiver's `aircraft.json`, such as
+  `http://192.168.1.20:8080/data/aircraft.json`. Inside the container,
+  `127.0.0.1` is the container itself, so use an address on your network.
+- the output's `directory = "/feed"`
+
+Write the Compose settings to `/srv/wtf-adsb/engine.env`:
+
+```sh
+ENGINE_CONFIG_DIR=/srv/wtf-adsb/config
+ENGINE_STATE_DIR=/srv/wtf-adsb/state
+ENGINE_FEED_DIR=/srv/wtf-adsb/feed
+ENGINE_REFERENCE_DIR=/srv/wtf-adsb/references
+```
+
+Optional settings are `ENGINE_IMAGE` (default `wtf-adsb-engine:local`),
+`ENGINE_UID` and `ENGINE_GID` (default 1000), and `ENGINE_MEMORY_LIMIT`
+(default `2g`). Start the services and check readiness:
+
+```sh
+docker compose --env-file /srv/wtf-adsb/engine.env -f deploy/compose.yaml up -d
+docker compose --env-file /srv/wtf-adsb/engine.env -f deploy/compose.yaml exec engine \
+  wtf-adsb-engine health --config /config/receiver.toml --readiness
+```
+
+The first export can take several minutes, and readiness reports not ready
+until it finishes. Compose also starts a private viewer on port 8080 inside the
+Compose network. It publishes no host port; keep it behind your own private
+network or an authenticated proxy.
+
+To upgrade, update the checkout, run `make image`, and rerun the `up -d`
+command. The state and feed directories carry over.
+
+## Run without Docker
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```sh
 uv python install
 uv sync --locked
-.venv/bin/wtf-adsb-engine --version
-.venv/bin/wtf-adsb-engine plugins
-.venv/bin/wtf-adsb-engine check --config examples/replay.toml
-.venv/bin/wtf-adsb-engine run-once --config examples/replay.toml
-.venv/bin/wtf-adsb-engine status --config examples/replay.toml
-```
-
-The first install downloads Python and dependencies as needed. The replay itself
-makes no provider requests and needs no receiver. It writes private state under
-`state/demo` and a manifest with immutable JSON batches under `state/export`.
-Its `synthetic: true` marker makes production consumers refuse it. Repeating the
-command resumes the saved replay checkpoint; unchanged evidence creates no new
-revision. Inspect `state/export/manifest.json` to find the delivered batch files.
-Warnings about three omitted reference bundles are expected; see
-[reference data and coverage](docs/reference-data.md).
-
-`uv.lock` records exact runtime, development and build dependencies with artifact
-hashes. The [dependency audit](docs/dependency-audit-2026-10-08.md) records the
-latest stable versions checked on 9 October 2026 and the separate data-source
-licensing review.
-
-## Collect from a receiver
-
-Copy [examples/receiver.toml](examples/receiver.toml) to a private configuration:
-
-```sh
 install -d -m 0700 state
 cp examples/receiver.toml state/receiver.toml
 chmod 0600 state/receiver.toml
 ```
 
-Edit the copy's `url` to point at your receiver's `aircraft.json` endpoint, then:
+Set the `url` in `state/receiver.toml`, then run
+`.venv/bin/wtf-adsb-engine check --config state/receiver.toml` and
+`.venv/bin/wtf-adsb-engine run --config state/receiver.toml`. Use your service
+manager to keep it running. To try the engine without a receiver, run
+`.venv/bin/wtf-adsb-engine run-once --config examples/replay.toml`.
 
-```sh
-.venv/bin/wtf-adsb-engine check --config state/receiver.toml
-.venv/bin/wtf-adsb-engine run --config state/receiver.toml
-```
+## Have an AI assistant set it up
 
-That configuration uses `wtf_adsb.receiver_service`: its compatibility collector
-processes receiver reports every 10 seconds, while the engine projects the
-current journal with a configured 60-second interval between passes. Output
-workers deliver committed changes independently. Type-registry and wind requests
-are disabled in the example and can be enabled explicitly. The simpler
-`wtf_adsb.receiver_json` input polls at the pipeline interval.
-`wtf_adsb.json_replay` accepts receiver snapshots as NDJSON;
-`wtf_adsb.journal` reads an existing detector journal during migration and holds
-export when its saved analysis is incomplete.
+Open this repository in Claude Code or a similar harness and say "set this up."
+[AGENTS.md](AGENTS.md) tells the assistant what to ask you, where to keep your
+private configuration, and how to check and start the service.
 
-Configuration paths are relative to the TOML file. Keep persistent source and
-instance names stable, and give each engine process its own state directory.
-Use Ctrl-C or SIGTERM to stop. Read [configuration](docs/configuration.md) for
-options and [operations](docs/operations.md) for health, backups, upgrades,
-retractions, and troubleshooting.
+## Where the data goes
 
-The engine also includes a private factual viewer, optional read-only access to
-archived writing, journal migration and a local container build. See
-[deployment](docs/deployment.md) for setup and operational checks.
+The feed directory holds `manifest.json` and immutable JSON batches in the
+`wtf-adsb.collection.v1` format. Give consumers read-only access and have them
+deduplicate, because delivery is at least once. The feed leaves out receiver
+coordinates, receiver-relative range and bearing, and private hostnames, but
+aircraft tracks can still suggest the general reception area. See the
+[evidence format](docs/evidence-format.md).
 
-## Analyze archives
+## Documentation
 
-The installed engine includes `wtf-adsb-backfill-history`,
-`wtf-adsb-backfill-metrics` and `wtf-adsb-import-replay`. They freeze and replay
-private historical corpora, analyze captured local metrics, and import compact
-replay into a journal backup. Inputs are explicit, and the importer requires
-the `archive` extra.
-See [archive operations](docs/archive-operations.md) for commands, frozen-source
-pinning and private output requirements.
+The [documentation index](docs/README.md) covers
+[configuration](docs/configuration.md), [operations](docs/operations.md),
+[deployment](docs/deployment.md), [reference data](docs/reference-data.md),
+and the [plugin SDK](docs/plugin-architecture.md). For help, read
+[SUPPORT.md](SUPPORT.md); report vulnerabilities through
+[SECURITY.md](SECURITY.md).
 
-## Extend it
+## Development
 
-Installed Python packages can register six SDK roles: inputs, detectors,
-enrichers, reference providers, formats and outputs. Configuration selects
-plugins and separately approves schemas for exported extensions. Discovery reads
-package metadata without importing unselected code.
+[DEVELOPMENT.md](DEVELOPMENT.md) covers the development setup, checks, image
+builds, plugins, and releases.
 
-The [reference-label example](examples/plugins/reference-label/README.md) is a
-separate installable distribution with a real entry point and an offline
-integration test. The [plugin architecture](docs/plugin-architecture.md)
-documents the synchronous SDK and its limits. Plugins are trusted Python code
-with the engine process's permissions; the SDK is not a security sandbox.
+## License
 
-## Evidence and delivery
-
-The implemented interface is `wtf-adsb.collection.v1`, contract version `1.1.0`
-(readers also accept `1.0.0` batches).
-It exports reviewed collection groups, findings, context and bounded aircraft
-tracks. The existing analysis lives behind the compatibility collection plugin;
-individual rules have not all become separate plugins.
-
-Read the [evidence format](docs/evidence-format.md), bundled
-[JSON Schemas](contracts/README.md) and
-[synthetic batch](examples/change-batch.example.json). The durable outbox assigns
-stable IDs and revisions, persists batch envelopes and delivery bytes, and keeps
-a separate cursor for each output. The file sink writes batches before atomically
-replacing their manifest. Delivery is at least once, so consumers must deduplicate.
-
-Receiver coordinates, receiver-relative range and bearing, private paths and
-hostnames are excluded from the export profile. Aircraft tracks can still reveal
-a general reception region. Keep the feed private and mount it read-only for the
-consumer.
-
-## Current limits
-
-This release retains the entire change history. Automatic pruning, recovery
-checkpoints, generation recovery and online removal of historical private data
-are deferred. Witnessed group merges and splits emit replacement observations
-and explicit supersession retractions. Unsupported gaps, ambiguous identity
-changes and changed stream generations stop processing. Privacy removal requires
-stopping distribution and coordinating sanitized replacement state with every
-consumer; adding a retraction alone cannot erase old batches. Bundled airport
-coverage is regional, and some reference checks are unavailable without separately
-supplied data. The engine does not decode raw radio samples or Beast/SBS streams.
-
-## Contributing and support
-
-```sh
-uv sync --locked --extra dev --extra archive
-make check
-.venv/bin/python tools/check_dependencies.py
-```
-
-`make check` runs Ruff, offline unit and integration tests, package builds, and
-a synthetic replay from the installed base wheel outside the source checkout.
-With Docker available, `make image && make test-image` also checks the actual
-image, graceful restart and an independently installed plugin. The image checks
-run offline after the build has fetched dependencies.
-The separate dependency check uses the live PyPI registry and never updates pins.
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes. Use
-[SUPPORT.md](SUPPORT.md) for questions and [SECURITY.md](SECURITY.md) for private
-vulnerability reports. The [documentation index](docs/README.md) links all user
-and maintainer guides. See [CHANGELOG.md](CHANGELOG.md) for changes and current
-release status.
-
-## License and attribution
-
-The engine's original code, documentation, contracts, and examples use the
-[MIT license](LICENSE). Dependencies and reference data retain their separate
-terms; see [third-party notices](THIRD_PARTY_NOTICES.md) and
-[authors](AUTHORS.md). The engine excludes
-`reference-aircraft-types-v1.json`, `reference-identity-v1.json` and
-`reference-notable-variants-v1.json` until their redistribution terms are resolved.
-Maintainers should follow [release maintenance](docs/releasing.md) when preparing
-public distributions.
+The engine's code, documentation, contracts, and examples use the
+[MIT license](LICENSE). Dependencies and reference data keep their own terms;
+see the [third-party notices](THIRD_PARTY_NOTICES.md) and [authors](AUTHORS.md).

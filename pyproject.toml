@@ -21,6 +21,12 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
+[project.urls]
+Homepage = "https://wtf-adsb.com"
+Source = "https://github.com/OWNER/wtf-adsb-engine"
+Issues = "https://github.com/OWNER/wtf-adsb-engine/issues"
+Changelog = "https://github.com/OWNER/wtf-adsb-engine/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 archive = ["numpy==2.5.4"]
 dev = ["build==1.6.1", "hatchling==1.32.4", "ruff==0.17.2", "numpy==2.5.4"]

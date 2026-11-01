@@ -32,7 +32,7 @@ tested. The default command starts collection
 with `run --config /config/receiver.toml`; mount the configured files and state
 before starting it. Pass `--help` to inspect commands without starting collection.
 
-After the developer setup in the [README](../README.md#contributing-and-support),
+After the [developer setup](../DEVELOPMENT.md#set-up-a-checkout),
 validate the installed image:
 
 ```sh

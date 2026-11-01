@@ -5,11 +5,11 @@ so it does not depend on a package registry release.
 
 ## Repository setup
 
-Before the first public push, choose the canonical GitHub repository and add its
-real source, issue, and documentation URLs to package metadata where appropriate.
-Configure a private security-reporting channel and a private conduct contact;
-keep [SECURITY.md](../SECURITY.md) and [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
-accurate. GitHub private vulnerability reporting requires a repository setting,
+Before the first public push, choose the canonical GitHub repository and
+replace the `OWNER` placeholder in the `[project.urls]` table of
+`pyproject.toml` with its owner. Configure a private security-reporting channel
+and a private conduct contact; keep [SECURITY.md](../SECURITY.md) and
+[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) accurate. GitHub private vulnerability reporting requires a repository setting,
 not just a file.
 
 Enable the check workflow and review dependency update pull requests. Require
@@ -68,8 +68,8 @@ Review pinned Python/uv image digests along with library updates, and preserve
 dependency license files in derived images. The default workflow builds local
 images without publishing or deploying them.
 
-Walk through the README replay from a fresh source directory and verify a
-repeat creates no new evidence. Run the installed-wheel and external-plugin
+Walk through the [synthetic replay](../DEVELOPMENT.md#try-the-synthetic-replay)
+from a fresh source directory and verify a repeat creates no new evidence. Run the installed-wheel and external-plugin
 checks. Review documentation links and command help after CLI changes.
 
 Inspect release notes for identity, persistence, and consumer compatibility

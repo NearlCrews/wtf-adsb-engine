@@ -1,7 +1,9 @@
 # Documentation
 
-Start with the [project README](../README.md) for installation and synthetic
-replay. All commands assume a source checkout unless a guide says otherwise.
+Start with the [project README](../README.md) for the quick start. The
+[development guide](../DEVELOPMENT.md) covers the development setup, checks,
+image builds, and the synthetic replay. All commands assume a source checkout
+unless a guide says otherwise.
 
 | Task | Guide |
 | --- | --- |
@@ -12,7 +14,7 @@ replay. All commands assume a source checkout unless a guide says otherwise.
 | Freeze and analyze historical archives | [Archive operations](archive-operations.md) |
 | Write an installed plugin | [Plugin SDK](plugin-architecture.md) and [example](../examples/plugins/reference-label/README.md) |
 | Consume the JSON feed | [Evidence format](evidence-format.md) and [JSON Schemas](../contracts/README.md) |
-| Set up development and submit a change | [Contributing](../CONTRIBUTING.md) |
+| Set up development and submit a change | [Development](../DEVELOPMENT.md) and [contributing](../CONTRIBUTING.md) |
 | Find help or report a vulnerability | [Support](../SUPPORT.md) and [security](../SECURITY.md) |
 | Prepare a release and maintain dependencies | [Release maintenance](releasing.md) |
 | Inspect the dependency baseline and source terms | [Dependency audit](dependency-audit-2026-10-08.md) and [third-party notices](../THIRD_PARTY_NOTICES.md) |

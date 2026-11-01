@@ -14,7 +14,7 @@ The commands below use that environment's `python`.
 The equivalent console commands are `wtf-adsb-backfill-history`,
 `wtf-adsb-backfill-metrics` and `wtf-adsb-import-replay`.
 
-Archive data is optional. The [README replay](../README.md) works without an
+Archive data is optional. The [synthetic replay](../DEVELOPMENT.md#try-the-synthetic-replay) works without an
 archive or metadata download. These commands require existing readsb/tar1090-style
 history and a compatible engine analysis journal; they cannot import arbitrary
 CSV, JSON, or SQLite layouts. Use each command's `--help` for its input options.

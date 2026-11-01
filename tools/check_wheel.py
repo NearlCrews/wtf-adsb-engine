@@ -42,6 +42,7 @@ def main():
         for name in (
             *BUILD_FILES,
             "CONTRIBUTING.md",
+            "DEVELOPMENT.md",
             "SECURITY.md",
             "CODE_OF_CONDUCT.md",
             "CHANGELOG.md",
