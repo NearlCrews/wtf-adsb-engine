@@ -111,26 +111,30 @@ The tag starts `.github/workflows/release.yml`, which uses only the workflow's
    `tools/release_notes.py`;
 2. runs `make check`, `make image`, and `make test-image`, and copies
    `build.json` and `packages.json` out of the local image;
-3. pushes the image to `ghcr.io/OWNER/wtf-adsb-engine` as both the version tag
-   (`v0.1.0`) and `latest`, and writes the pushed digest to the job summary and
-   the release notes;
+3. pushes the image to `ghcr.io/OWNER/wtf-adsb-engine` under the version tag
+   (`v0.1.0`), and writes the pushed digest to the job summary and the release
+   notes;
 4. creates the GitHub release for the tag with those two inventories, the
-   source archive, and the wheel attached. This is the only step after the push.
+   source archive, and the wheel attached;
+5. tags and pushes the same image as `latest`, only after the release exists
+   and only when the version has no hyphen. A pre-release such as `0.2.0-rc.1`
+   never moves `latest`, and a failed release leaves it on the previous release.
 
 GitHub derives the image name from the repository, lowercased, so `OWNER` is
 the account or organization that holds the repository. Replace the placeholder
-wherever it appears once the owner is chosen. Every tag moves `latest`, so tag
-only versions meant for general use. A new GHCR package is private until its
-visibility is changed in the package settings; make it public after the first
-release, then pull the tag and compare its digest with the release notes.
+wherever it appears once the owner is chosen. A new GHCR package is private
+until its visibility is changed in the package settings; make it public after
+the first release, then pull the tag and compare its digest with the release
+notes.
 
 A run that fails before the push can be rerun from the Actions page. Once the
 push has succeeded, do not rerun the workflow: the build is not
-byte-reproducible, so a rerun republishes the version tag and `latest` with a
-new digest that no longer matches the one already reported. If only the release
-creation failed, create the missing release by hand from that run's outputs
-instead: pull the pushed version tag and copy `build.json` and `packages.json`
-out of it, write the notes with `tools/release_notes.py` and add the digest
-from the run's job summary, build the archives with `make build` from the
-tagged commit, and attach them with `gh release create --verify-tag`. Do not
-move a published tag; fix forward with a new version instead.
+byte-reproducible, so a rerun republishes the version tag with a new digest
+that no longer matches the one already reported. If only the release creation
+failed, create the missing release by hand from that run's outputs instead:
+pull the pushed version tag and copy `build.json` and `packages.json` out of
+it, write the notes with `tools/release_notes.py` and add the digest from the
+run's job summary, build the archives with `make build` from the tagged commit,
+attach them with `gh release create --verify-tag`, and then, for a version
+without a hyphen, tag the pulled image as `latest` and push it. Do not move a
+published tag; fix forward with a new version instead.

@@ -55,11 +55,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push the image
+      - name: Push the version tag
         run: |
-          docker tag "$IMAGE" "$LATEST"
           docker push "$IMAGE"
-          docker push "$LATEST"
           digest="$(docker buildx imagetools inspect "$IMAGE" | awk '$1 == "Digest:" { print $2; exit }')"
           if [ -z "$digest" ]; then
             echo "Could not read the pushed image digest" >&2
@@ -69,14 +67,14 @@ jobs:
           {
             echo "## Container image"
             echo
-            echo "- Tags: \`$IMAGE\`, \`$LATEST\`"
+            echo "- Tag: \`$IMAGE\`"
             echo "- Digest: \`$image\`"
           } >> "$GITHUB_STEP_SUMMARY"
           {
             echo
             echo "### Container image"
             echo
-            echo "\`$image\`, also tagged \`$IMAGE\` and \`$LATEST\`."
+            echo "\`$image\`, also tagged \`$IMAGE\`."
           } >> "$RUNNER_TEMP/release/notes.md"
       - name: Create the GitHub release
         env:
@@ -90,3 +88,14 @@ jobs:
             "$RUNNER_TEMP/release/packages.json" \
             dist/wtf_adsb_engine-*.tar.gz \
             dist/wtf_adsb_engine-*.whl
+      - name: Move latest to the released image
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*)
+              echo "Pre-release $GITHUB_REF_NAME does not move latest"
+              exit 0
+              ;;
+          esac
+          docker tag "$IMAGE" "$LATEST"
+          docker push "$LATEST"
+          echo "- Also tagged: \`$LATEST\`" >> "$GITHUB_STEP_SUMMARY"
