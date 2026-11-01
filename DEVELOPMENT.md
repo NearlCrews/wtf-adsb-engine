@@ -160,12 +160,14 @@ consumer.
 
 ## Shared files
 
-The publisher carries copies of `wire.py`, `analysis/kinds.py`,
-`analysis/enrichment_rules.py`, and the three JSON Schemas. Both repositories
-must hold byte-identical copies. `sync-state.json` records the SHA-256 digest of
-each one, and `tests/test_shared_digests.py` fails when a file no longer matches
-its recorded digest. Change a shared file in both repositories in the same
-release and update the recorded digests with it.
+The publisher repository, `wtf-adsb-publisher`, is also public. It keeps
+byte-identical copies of `wire.py`, `analysis/kinds.py`,
+`analysis/enrichment_rules.py`, and the three JSON Schemas in `contracts/`.
+A change to any of them is a coordinated contract change that lands in both
+repositories. `sync-state.json` records the SHA-256 digest of each file, and
+`tests/test_shared_digests.py` fails when a copy no longer matches its
+recorded digest. Update those digests in the same change with
+`tools/record_shared_digests.py` once that tool exists.
 
 ## Current limits
 

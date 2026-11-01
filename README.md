@@ -1,7 +1,7 @@
 # WTF ADS-B Engine
 
-WTF ADS-B Engine reads the aircraft JSON from an ADS-B receiver (readsb or
-tar1090 style), detects notable aircraft and flight patterns, and writes
+WTF ADS-B Engine reads the aircraft JSON from an ADS-B receiver (readsb- or
+tar1090-style), detects notable aircraft and flight patterns, and writes
 reviewed findings to a versioned JSON feed. A website, alert script, or other
 program can read that feed without importing the engine or opening its
 database. It needs no cloud service or paid account.
@@ -19,40 +19,41 @@ You configure the engine once and start the container. From then on it polls
 the receiver, keeps its own journal, and delivers new findings to the feed
 directory without supervision. Docker restarts it after a crash or reboot and
 runs its health check every 30 seconds. Upkeep is an occasional image upgrade
-and the health command shown below.
+and the readiness command shown below.
 
 ## Quick start with Docker
 
-You need Linux, Docker with Compose, GNU Make, and a receiver whose
-`aircraft.json` the Docker host can reach. Clone this repository, change into
-it, and build the image:
+You need Linux on x86-64 (amd64), Docker with Compose, GNU Make, and a receiver
+whose `aircraft.json` the Docker host can reach. `make image` builds for
+`linux/amd64` only; set `PLATFORM=` to try another platform. Clone this
+repository, change into it, and build the image:
 
 ```sh
 make image
 ```
 
-Create four private directories owned by UID and GID 1000, the image's default
-account. This example uses `/srv/wtf-adsb`; any absolute path works.
+Create a parent directory your account owns, then four private directories
+owned by UID and GID 1000, the image's default account. Any absolute path works
+in place of `/srv/wtf-adsb`.
 
 ```sh
+sudo install -d -m 0755 -o "$(id -u)" -g "$(id -g)" /srv/wtf-adsb
 sudo install -d -m 0700 -o 1000 -g 1000 \
   /srv/wtf-adsb/config /srv/wtf-adsb/state /srv/wtf-adsb/feed /srv/wtf-adsb/references
 sudo install -m 0600 -o 1000 -g 1000 examples/receiver.toml /srv/wtf-adsb/config/receiver.toml
 sudo install -m 0644 -o 1000 -g 1000 src/wtf_adsb_engine/analysis/data/*.json /srv/wtf-adsb/references/
 ```
 
-Compose points the engine's reference tables at the references directory, so
-the last command copies the bundled tables there. Edit
-`/srv/wtf-adsb/config/receiver.toml` (with `sudo` unless your account is UID
-1000) and change three values:
+Edit `/srv/wtf-adsb/config/receiver.toml` (with `sudo` unless your account is
+UID 1000) and change three values:
 
 - `state_directory = "/state"`
 - the input's `url`, set to your receiver's `aircraft.json`, such as
   `http://192.168.1.20:8080/data/aircraft.json`. Inside the container,
-  `127.0.0.1` is the container itself, so use an address on your network.
+  `127.0.0.1` is the container itself.
 - the output's `directory = "/feed"`
 
-Write the Compose settings to `/srv/wtf-adsb/engine.env`:
+Write these four lines to `/srv/wtf-adsb/engine.env`:
 
 ```sh
 ENGINE_CONFIG_DIR=/srv/wtf-adsb/config
@@ -61,9 +62,7 @@ ENGINE_FEED_DIR=/srv/wtf-adsb/feed
 ENGINE_REFERENCE_DIR=/srv/wtf-adsb/references
 ```
 
-Optional settings are `ENGINE_IMAGE` (default `wtf-adsb-engine:local`),
-`ENGINE_UID` and `ENGINE_GID` (default 1000), and `ENGINE_MEMORY_LIMIT`
-(default `2g`). Start the services and check readiness:
+Start the services and check readiness:
 
 ```sh
 docker compose --env-file /srv/wtf-adsb/engine.env -f deploy/compose.yaml up -d
@@ -71,13 +70,11 @@ docker compose --env-file /srv/wtf-adsb/engine.env -f deploy/compose.yaml exec e
   wtf-adsb-engine health --config /config/receiver.toml --readiness
 ```
 
-The first export can take several minutes, and readiness reports not ready
-until it finishes. Compose also starts a private viewer on port 8080 inside the
-Compose network. It publishes no host port; keep it behind your own private
-network or an authenticated proxy.
-
-To upgrade, update the checkout, run `make image`, and rerun the `up -d`
-command. The state and feed directories carry over.
+Readiness reports not ready until the first export finishes, which can take
+several minutes. Warnings about three missing reference bundles are expected;
+see [reference data](docs/reference-data.md). The
+[deployment guide](docs/deployment.md#compose-settings-viewer-and-upgrades)
+covers optional settings, the private viewer, and upgrades.
 
 ## Run without Docker
 

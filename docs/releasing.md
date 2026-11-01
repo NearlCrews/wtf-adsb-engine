@@ -6,11 +6,13 @@ so it does not depend on a package registry release.
 ## Repository setup
 
 Before the first public push, choose the canonical GitHub repository and
-replace the `OWNER` placeholder in the `[project.urls]` table of
-`pyproject.toml` with its owner. Configure a private security-reporting channel
-and a private conduct contact; keep [SECURITY.md](../SECURITY.md) and
-[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) accurate. GitHub private vulnerability reporting requires a repository setting,
-not just a file.
+replace the `OWNER` placeholder in the `Homepage`, `Source`, `Issues`, and
+`Changelog` entries of the `[project.urls]` table in `pyproject.toml` with its
+owner. The `Example deployment` entry links to wtf-adsb.com and needs no
+change. Configure a private security-reporting channel and a private conduct
+contact; keep [SECURITY.md](../SECURITY.md) and
+[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) accurate. GitHub private
+vulnerability reporting requires a repository setting, not just a file.
 
 Enable the check workflow and review dependency update pull requests. Require
 successful checks on the default branch when the repository's settings support

@@ -22,7 +22,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://wtf-adsb.com"
+Homepage = "https://github.com/OWNER/wtf-adsb-engine"
+"Example deployment" = "https://wtf-adsb.com"
 Source = "https://github.com/OWNER/wtf-adsb-engine"
 Issues = "https://github.com/OWNER/wtf-adsb-engine/issues"
 Changelog = "https://github.com/OWNER/wtf-adsb-engine/blob/main/CHANGELOG.md"

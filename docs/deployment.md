@@ -113,6 +113,25 @@ initial export can remain unready while the process is healthy. Test initial
 sync and a fresh subsequent pass before starting an observation window. Preserve
 the old deployment until the chosen window and rollback rehearsal pass.
 
+## Compose settings, viewer, and upgrades
+
+The Compose `--env-file` needs the four directory variables shown in the
+[README](../README.md#quick-start-with-docker). Optional settings are
+`ENGINE_IMAGE` (default `wtf-adsb-engine:local`), `ENGINE_UID` and `ENGINE_GID`
+(default 1000), `ENGINE_MEMORY_LIMIT` (default `2g`), `VIEWER_MEMORY_LIMIT`
+(default `512m`), `ENGINE_START_PERIOD` (default `300s`), and
+`ENGINE_STOP_GRACE` (default `600s`).
+
+Compose also starts the private viewer on port 8080 inside the Compose network.
+It publishes no host port; keep it behind your own private network or an
+authenticated proxy.
+
+To upgrade, update the checkout, run `make image`, and rerun the `up -d` command
+with the same `--env-file`. The state and feed directories carry over. Copy the
+bundled reference tables into the references directory again first, because a
+release can change them. `tools/setup.py configure` does that for you when you
+rerun it with the same answers.
+
 ## Copy a compatible journal
 
 Prepare a `wtf_adsb.receiver_service` configuration with a new state directory.
