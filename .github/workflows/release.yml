@@ -24,7 +24,9 @@ jobs:
         with:
           version: "0.12.24"
           enable-cache: false
-      - run: uv python install
+      # uv's download index skips some patch releases, so the runner takes any 3.14.
+      - run: uv python install 3.14
+      - run: echo "UV_PYTHON=3.14" >> "$GITHUB_ENV"
       - run: uv sync --locked --extra dev --extra archive
       - name: Check the tag and write the release notes
         run: |
