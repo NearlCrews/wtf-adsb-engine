@@ -84,7 +84,7 @@ given with `--feed`; it is offline and exits with status 1 on any disagreement.
 ## Shared files
 
 These files are byte-identical with the
-[WTF ADS-B Publisher](https://github.com/OWNER/wtf-adsb-publisher) repository:
+[WTF ADS-B Publisher](https://github.com/NearlCrews/wtf-adsb-publisher) repository:
 
 - `src/wtf_adsb_engine/wire.py`
 - `src/wtf_adsb_engine/analysis/kinds.py`

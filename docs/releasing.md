@@ -6,18 +6,16 @@ package is uploaded to a package registry.
 
 ## Repository setup
 
-Before the first public push, choose the canonical GitHub repository and
-replace the `OWNER` placeholder with its owner in the `Homepage`, `Source`,
-`Issues`, and `Changelog` entries of the `[project.urls]` table in
-`pyproject.toml`, in the `ghcr.io/OWNER/wtf-adsb-engine` image name in the
-README and in this guide, and in the publisher repository link in
-[CONTRIBUTING.md](../CONTRIBUTING.md). The `Example deployment` entry links to
-wtf-adsb.com and needs no change. That list can go stale, so treat this command
-as the authoritative check; afterwards it should show only this guide's own
-mentions of the placeholder:
+The canonical repository is `NearlCrews/wtf-adsb-engine`. Its owner appears in
+the `Homepage`, `Source`, `Issues`, and `Changelog` entries of the
+`[project.urls]` table in `pyproject.toml`, in the
+`ghcr.io/nearlcrews/wtf-adsb-engine` image name in the README and in this guide,
+and in the publisher repository link in [CONTRIBUTING.md](../CONTRIBUTING.md).
+A fork that publishes under another owner replaces those mentions; this command
+lists them:
 
 ```sh
-git grep -nw OWNER
+git grep -n 'github.com/NearlCrews\|ghcr.io/nearlcrews'
 ```
 
 Configure a private security-reporting channel and a private conduct contact;
@@ -111,7 +109,7 @@ The tag starts `.github/workflows/release.yml`, which uses only the workflow's
    `tools/release_notes.py`;
 2. runs `make check`, `make image`, and `make test-image`, and copies
    `build.json` and `packages.json` out of the local image;
-3. pushes the image to `ghcr.io/OWNER/wtf-adsb-engine` under the version tag
+3. pushes the image to `ghcr.io/nearlcrews/wtf-adsb-engine` under the version tag
    (`v0.1.0`), and writes the pushed digest to the job summary and the release
    notes;
 4. creates the GitHub release for the tag with those two inventories, the
@@ -123,9 +121,8 @@ The tag starts `.github/workflows/release.yml`, which uses only the workflow's
    `0.2.0b1`, `0.2.0.dev1`, or `0.2.0-rc.1` never moves `latest`, and a failed
    release leaves it on the previous release.
 
-GitHub derives the image name from the repository, lowercased, so `OWNER` is
-the account or organization that holds the repository. Replace the placeholder
-wherever it appears once the owner is chosen. A new GHCR package is private
+GitHub derives the image name from the repository, lowercased, which is why
+the image lives under `ghcr.io/nearlcrews/`. A new GHCR package is private
 until its visibility is changed in the package settings; make it public after
 the first release, then pull the tag and compare its digest with the release
 notes.

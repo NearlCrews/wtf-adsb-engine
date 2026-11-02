@@ -22,11 +22,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/OWNER/wtf-adsb-engine"
+Homepage = "https://github.com/NearlCrews/wtf-adsb-engine"
 "Example deployment" = "https://wtf-adsb.com"
-Source = "https://github.com/OWNER/wtf-adsb-engine"
-Issues = "https://github.com/OWNER/wtf-adsb-engine/issues"
-Changelog = "https://github.com/OWNER/wtf-adsb-engine/blob/main/CHANGELOG.md"
+Source = "https://github.com/NearlCrews/wtf-adsb-engine"
+Issues = "https://github.com/NearlCrews/wtf-adsb-engine/issues"
+Changelog = "https://github.com/NearlCrews/wtf-adsb-engine/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 archive = ["numpy==2.5.4"]

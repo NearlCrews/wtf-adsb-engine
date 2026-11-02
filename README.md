@@ -34,8 +34,8 @@ make image
 
 After the first release, tagged images are also on the GitHub Container
 Registry. Instead of `make image` you can then run
-`docker pull ghcr.io/OWNER/wtf-adsb-engine:v0.1.0` and add
-`ENGINE_IMAGE=ghcr.io/OWNER/wtf-adsb-engine:v0.1.0` to the `engine.env` file
+`docker pull ghcr.io/nearlcrews/wtf-adsb-engine:v0.1.0` and add
+`ENGINE_IMAGE=ghcr.io/nearlcrews/wtf-adsb-engine:v0.1.0` to the `engine.env` file
 below.
 
 Create a parent directory your account owns, a configuration directory your
