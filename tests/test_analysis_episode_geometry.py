@@ -728,6 +728,18 @@ class AerobaticPractice(unittest.TestCase):
         found = {f.kind: f for f in maneuvers.trajectory(points, aircraft)}
         self.assertEqual(found["aerobatic_practice"].evidence["maneuver"]["basis"], "turn_rate")
 
+    def test_type_basis_without_a_held_turn_omits_the_turn_rate(self):
+        points, aircraft = self.sawtooth(turn_dps=2.0)
+        found = {f.kind: f for f in maneuvers.trajectory(points, aircraft)}
+        info = found["aerobatic_practice"].evidence["maneuver"]
+        self.assertEqual(info["basis"], "type")
+        self.assertNotIn("max_turn_rate_dps", info)
+
+    def test_turn_rate_is_the_best_rate_held_for_twenty_seconds(self):
+        track = Track(speed=120).straight(60).turn(200, 6.5).turn(300, 12.0).straight(60)
+        rate = maneuvers._max_turn_rate(sample(track, period=1.0))
+        self.assertGreater(rate, 10.0)
+
     def test_small_reversals_do_not_count(self):
         points, aircraft = self.sawtooth(amplitude=600)
         self.assertNotIn("aerobatic_practice", {f.kind for f in maneuvers.trajectory(points, aircraft)})
@@ -794,9 +806,11 @@ class RacetrackOrbit(unittest.TestCase):
         found = maneuvers.racetrack(legs, self.pos(legs), aircraft)
         self.assertIsNotNone(found)
         info = found.evidence["maneuver"]
-        self.assertEqual(info["legs"], 4)
+        self.assertEqual(info["racetrack_legs"], 4)
+        self.assertNotIn("legs", info)
+        self.assertNotIn("duration_s", info)
         self.assertAlmostEqual(info["lateral_spacing_nm"], 6.0, delta=0.3)
-        self.assertGreaterEqual(info["duration_s"], 2400)
+        self.assertGreaterEqual(info["duration_seconds"], 2400)
         self.assertIn("tanker_type", info["context_tags"])
         self.assertIn("military_flag", info["context_tags"])
 
@@ -813,6 +827,66 @@ class RacetrackOrbit(unittest.TestCase):
         legs = self.legs(drift_nm=1.5)
         self.assertIsNone(maneuvers.racetrack(legs, self.pos(legs), {}))
 
+    @staticmethod
+    def line(started_at, center, heading, *, length_nm=12.0, seconds=720):
+        """One leg through ``center`` ([lat, lon]) at ``heading``."""
+        dlon = 1 / (60 * math.cos(math.radians(center[0])))
+        half_east = length_nm / 2 * math.sin(math.radians(heading)) * dlon
+        half_north = length_nm / 2 * math.cos(math.radians(heading)) / 60
+        return {
+            "started_at": started_at,
+            "ended_at": started_at + seconds,
+            "length_nm": length_nm,
+            "start": [center[0] - half_north, center[1] - half_east],
+            "end": [center[0] + half_north, center[1] + half_east],
+        }
+
+    def test_transit_legs_do_not_bias_the_axis(self):
+        legs = self.legs()
+        start = legs[0]["started_at"]
+        transits = [
+            self.line(start - 2400, [41.6, -84.5], 30.0, length_nm=20.0, seconds=900),
+            self.line(start - 1400, [41.8, -84.3], 45.0, length_nm=20.0, seconds=1000),
+        ]
+        found = maneuvers.racetrack([*transits, *legs], self.pos(legs), {})
+        self.assertIsNotNone(found)
+        info = found.evidence["maneuver"]
+        self.assertEqual(info["racetrack_legs"], 4)
+        self.assertAlmostEqual(info["axis_heading_deg"], 90.0, delta=1.0)
+        self.assertEqual(info["started_at"], start)
+
+    def test_axis_wraps_through_north(self):
+        lat0, lon0 = 42.0, -84.0
+        east = 6 / (60 * math.cos(math.radians(lat0)))
+        legs, t = [], 1_700_000_000.0
+        for heading in (358.0, 182.0, 2.0, 178.0):
+            northbound = math.cos(math.radians(heading)) > 0
+            legs.append(self.line(t, [lat0, lon0 if northbound else lon0 + east], heading))
+            t += 900
+        for ordered in (legs, legs[::-1]):
+            found = maneuvers.racetrack(ordered, self.pos(legs), {})
+            self.assertIsNotNone(found)
+            info = found.evidence["maneuver"]
+            self.assertLessEqual(abs((info["axis_heading_deg"] - 180 + 90) % 180 - 90), 0.5)
+            self.assertAlmostEqual(info["lateral_spacing_nm"], 6.0, delta=0.1)
+
+    def test_a_leg_slanting_off_its_line_fails_the_repeat(self):
+        legs = self.legs()
+        # Same midpoint, but turned 8 degrees: the ends sit about 1.7 NM off the line.
+        slanted = self.line(
+            legs[2]["started_at"],
+            [(legs[2]["start"][0] + legs[2]["end"][0]) / 2, (legs[2]["start"][1] + legs[2]["end"][1]) / 2],
+            98.0,
+            length_nm=24.0,
+        )
+        legs[2] = slanted
+        self.assertIsNone(maneuvers.racetrack(legs, self.pos(legs), {}))
+
+    def test_runway_distance_is_unknown_near_or_outside_the_table_edge(self):
+        self.assertIsNone(maneuvers._nearest_runway_nm([38.3, -84.0]))
+        self.assertIsNone(maneuvers._nearest_runway_nm([30.0, -84.0]))
+        self.assertIsNotNone(maneuvers._nearest_runway_nm([42.0, -84.0]))
+
     def test_trajectory_joins_saved_and_buffered_legs_into_a_racetrack(self):
         track = Track(altitude=25000, speed=240)
         for index in range(6):
@@ -827,7 +901,7 @@ class RacetrackOrbit(unittest.TestCase):
         self.assertIn("racetrack_orbit", found)
         self.assertNotIn("survey_grid", found)
         info = found["racetrack_orbit"].evidence["maneuver"]
-        self.assertEqual(info["legs"], 6)
+        self.assertEqual(info["racetrack_legs"], 6)
         self.assertAlmostEqual(info["lateral_spacing_nm"], 2.55, delta=0.2)
         self.assertEqual(info["quality_flags"], [])
 

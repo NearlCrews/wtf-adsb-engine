@@ -196,16 +196,18 @@ class ProjectionTests(unittest.TestCase):
     def test_racetrack_maneuver_metrics_and_tags_project(self):
         block = {
             "kind": "racetrack_orbit",
-            "legs": 4,
+            "racetrack_legs": 4,
             "leg_length_nm": 12.0,
             "axis_heading_deg": 90.0,
             "lateral_spacing_nm": 6.0,
             "line_repeat_nm": 0.0,
-            "duration_s": 3420,
+            "duration_seconds": 3420,
             "runway_within_nm": 50.0,
             "context_tags": ["airport_context", "military_flag", "tanker_type"],
         }
         self.assertEqual(export.EVIDENCE({"maneuver": block})["maneuver"], block)
+        retired = export.EVIDENCE({"maneuver": {**block, "legs": 4, "duration_s": 3420}})["maneuver"]
+        self.assertEqual(retired, block)
 
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()

@@ -85,11 +85,10 @@ METRICS = {
     "reversals": ("Altitude reversals", "reversals"),
     "span_nm": ("Track span", "NM"),
     "max_turn_rate_dps": ("Highest turn rate held for 20 seconds", "deg/s"),
-    "legs": ("Racetrack legs", "legs"),
+    "racetrack_legs": ("Racetrack legs", "legs"),
     "axis_heading_deg": ("Racetrack axis heading", "degrees"),
     "lateral_spacing_nm": ("Spacing between the two racetrack lines", "NM"),
     "line_repeat_nm": ("Largest leg offset from its line", "NM"),
-    "duration_s": ("Racetrack duration", "s"),
     "runway_within_nm": ("Nearest mapped runway end, up to 50 NM", "NM"),
     "turn_degrees": ("Course reversal", "degrees"),
     "closed_loops": ("Closed loops", "loops"),
@@ -397,15 +396,21 @@ def _near_runway(points, radius):
 def _nearest_runway_nm(point, radius=RACETRACK_RUNWAY_CAP_NM):
     """NM from ``point`` ([lat, lon]) to the nearest pinned runway end, at most ``radius``.
 
-    None when the runway table is unavailable.
+    None when the runway table is unavailable, or when ``point`` lies outside its
+    coverage or within ``radius`` of the coverage edge.
     """
     if not airport_context.available():
         return None
     lat, lon = point
+    # Near or beyond the table's edge, runways it does not hold could be closer.
+    west, south, east, north = airport_context.coverage()
+    scale = longitude_scale(lat)
+    if min((lat - south) * 60, (north - lat) * 60, (lon - west) * scale, (east - lon) * scale) < radius:
+        return None
     index = airport_context.runway_index()
     # Runways are filed by the whole degree of their center; a degree of latitude
     # is 60 NM, so one cell each way covers the radius north and south.
-    across = min(180, math.ceil(radius / max(longitude_scale(lat), 1.0)))
+    across = min(180, math.ceil(radius / max(scale, 1.0)))
     nearest = radius
     for dy in (-1, 0, 1):
         for dx in range(-across, across + 1):
@@ -1189,23 +1194,26 @@ def aerobatic_types():
 
 
 def _max_turn_rate(pos):
-    """The highest position-derived turn rate held for AEROBATIC_TURN_SECONDS, in deg/s.
+    """The highest position-derived turn rate held for AEROBATIC_TURN_SECONDS, in deg/s, or None.
 
-    A run is consecutive leg pairs each turning at least AEROBATIC_TURN_RATE_DPS
-    either way; its rate is the slowest pair in it.
+    A held rate is the slowest of consecutive leg pairs, each turning at least
+    AEROBATIC_TURN_RATE_DPS either way, that together span AEROBATIC_TURN_SECONDS;
+    the result is the highest held rate over every such span.
     """
-    best = 0.0
-    run_start, run_rate = None, 0.0
-    for a, b in pairwise(track_legs(pos, minimum=0.1)):
-        rate = abs(_turn_rate(a, b))
-        if rate >= AEROBATIC_TURN_RATE_DPS:
-            run_start = a["t0"] if run_start is None else run_start
-            run_rate = min(run_rate, rate) if run_rate else rate
-            if b["t1"] - run_start >= AEROBATIC_TURN_SECONDS:
-                best = max(best, run_rate)
-        else:
-            run_start, run_rate = None, 0.0
-    return round(best, 2)
+    pairs = [(a["t0"], b["t1"], abs(_turn_rate(a, b))) for a, b in pairwise(track_legs(pos, minimum=0.1))]
+    best = None
+    for index, (start, _, rate) in enumerate(pairs):
+        if rate < AEROBATIC_TURN_RATE_DPS:
+            continue
+        slowest = rate
+        for _, end, later in pairs[index:]:
+            if later < AEROBATIC_TURN_RATE_DPS:
+                break
+            slowest = min(slowest, later)
+            if end - start >= AEROBATIC_TURN_SECONDS:
+                best = slowest if best is None else max(best, slowest)
+                break
+    return None if best is None else round(best, 2)
 
 
 def aerobatic(pos, aircraft, coords=None):
@@ -1238,7 +1246,7 @@ def aerobatic(pos, aircraft, coords=None):
     turn = _max_turn_rate(window)
     if reference.clean(aircraft.get("t")) in aerobatic_types():
         basis = "type"
-    elif aircraft.get("category") == "A1" and turn >= AEROBATIC_TURN_RATE_DPS:
+    elif aircraft.get("category") == "A1" and turn is not None:
         basis = "turn_rate"
     else:
         return None
@@ -1252,7 +1260,8 @@ def aerobatic(pos, aircraft, coords=None):
         reversals=reversals,
         altitude_excursion_ft=round(excursion),
         span_nm=round(span, 2),
-        max_turn_rate_dps=turn,
+        # Without a turn held for AEROBATIC_TURN_SECONDS there is no rate to report.
+        **({} if turn is None else {"max_turn_rate_dps": turn}),
         basis=basis,
         altitude_reference=ref,
         episode_start=window[0]["ts"],
@@ -1578,36 +1587,34 @@ def _axis_offset(heading, axis):
     return (heading - axis + 90) % 180 - 90
 
 
-def racetrack(legs, pos, aircraft):
-    """A repeated racetrack of long reciprocal legs over the same two lines.
-
-    ``legs`` are straight_legs() summaries, merged here as survey_grid merges
-    them. The longest run of alternating legs at least 10 NM long and within 10°
-    of the common axis needs four legs over at least 40 minutes, its two lines
-    2 to 15 NM apart, and every leg within 1 NM of its line.
-    """
-    long_legs = [leg for leg in merge_legs(legs) if (leg.get("length_nm") or 0) >= RACETRACK_MIN_LEG_NM]
-    if len(long_legs) < RACETRACK_MIN_LEGS:
-        return None
-    # Straight-leg summaries carry no heading; it is the leg's own chord.
-    headings = [math.degrees(math.atan2(*_local(leg["end"], leg["start"]))) % 360 for leg in long_legs]
-    axis = _axis_mean(headings)
+def _alternating_run(entries, axis):
+    """The longest run of (leg, heading) entries within RACETRACK_AXIS_TOLERANCE of ``axis``
+    whose direction along it alternates, as (leg, heading, sign) triples. Legs off
+    the axis are skipped without ending the run."""
     run, best = [], []
-    for leg, heading in zip(long_legs, headings, strict=True):
+    for leg, heading in entries:
         if abs(_axis_offset(heading, axis)) > RACETRACK_AXIS_TOLERANCE:
             continue
-        # The direction along the axis must alternate from one leg to the next.
         sign = 1 if abs(wrap_angle(heading - axis)) <= 90 else -1
-        if run and sign == run[-1][1]:
+        if run and sign == run[-1][2]:
             run = []
-        run.append((leg, sign))
+        run.append((leg, heading, sign))
         if len(run) > len(best):
             best = list(run)
-    if len(best) < RACETRACK_MIN_LEGS:
+    return best
+
+
+def _racetrack_lines(run, axis):
+    """Spacing and line repeat of a run over ``axis``, or None when it is no racetrack.
+
+    Each leg's offset from its line is measured at both ends and the midpoint.
+    """
+    legs = [leg for leg, _, _ in run]
+    signs = [sign for _, _, sign in run]
+    duration = legs[-1]["ended_at"] - legs[0]["started_at"]
+    if len(legs) < RACETRACK_MIN_LEGS or duration < RACETRACK_MIN_SECONDS:
         return None
-    aligned = [leg for leg, _ in best]
-    signs = [sign for _, sign in best]
-    origin = aligned[0]["start"]
+    origin = legs[0]["start"]
     # The unit normal to the axis, as (east, north).
     normal = (-math.cos(math.radians(axis)), math.sin(math.radians(axis)))
 
@@ -1615,22 +1622,57 @@ def racetrack(legs, pos, aircraft):
         east, north = _local(point, origin)
         return east * normal[0] + north * normal[1]
 
-    centers = [[(leg["start"][i] + leg["end"][i]) / 2 for i in (0, 1)] for leg in aligned]
-    offsets = [lateral(center) for center in centers]
+    centers = [[(leg["start"][i] + leg["end"][i]) / 2 for i in (0, 1)] for leg in legs]
+    offsets = [
+        (lateral(leg["start"]), lateral(center), lateral(leg["end"]))
+        for leg, center in zip(legs, centers, strict=True)
+    ]
     means = {
-        side: statistics.fmean(o for o, s in zip(offsets, signs, strict=True) if s == side)
+        side: statistics.fmean(o[1] for o, s in zip(offsets, signs, strict=True) if s == side)
         for side in (1, -1)
     }
     spacing = abs(means[1] - means[-1])
-    repeat = max(abs(o - means[s]) for o, s in zip(offsets, signs, strict=True))
-    duration = aligned[-1]["ended_at"] - aligned[0]["started_at"]
-    if (
-        not RACETRACK_SPACING_NM[0] <= spacing <= RACETRACK_SPACING_NM[1]
-        or repeat > RACETRACK_LINE_REPEAT_NM
-        or duration < RACETRACK_MIN_SECONDS
-    ):
+    repeat = max(abs(value - means[s]) for o, s in zip(offsets, signs, strict=True) for value in o)
+    if not RACETRACK_SPACING_NM[0] <= spacing <= RACETRACK_SPACING_NM[1] or repeat > RACETRACK_LINE_REPEAT_NM:
         return None
-    aligned = summarize_legs(aligned, pos)
+    return {"legs": legs, "axis": axis, "spacing": spacing, "repeat": repeat, "centers": centers}
+
+
+def racetrack(legs, pos, aircraft):
+    """A repeated racetrack of long reciprocal legs over the same two lines.
+
+    ``legs`` are straight_legs() summaries, merged here as survey_grid merges
+    them. Each leg at least 10 NM long proposes its heading as the axis; the
+    longest run of alternating legs within 10° of it is refitted to its own axis
+    and checked again. A racetrack needs four legs over at least 40 minutes, its
+    two lines 2 to 15 NM apart, and every leg within 1 NM of its line. The
+    longest run that passes wins, the earliest on a tie.
+    """
+    long_legs = [leg for leg in merge_legs(legs) if (leg.get("length_nm") or 0) >= RACETRACK_MIN_LEG_NM]
+    if len(long_legs) < RACETRACK_MIN_LEGS:
+        return None
+    # Straight-leg summaries carry no heading; it is the leg's own chord.
+    entries = [(leg, math.degrees(math.atan2(*_local(leg["end"], leg["start"]))) % 360) for leg in long_legs]
+    shape = None
+    for candidate in sorted({round(heading % 180, 1) for _, heading in entries}):
+        run = _alternating_run(entries, candidate)
+        if len(run) < RACETRACK_MIN_LEGS:
+            continue
+        # Transit legs never set the axis: it is refitted on the run's own legs.
+        axis = _axis_mean([heading for _, heading, _ in run])
+        refit = _alternating_run([(leg, heading) for leg, heading, _ in run], axis)
+        if len(refit) != len(run):
+            continue
+        found = _racetrack_lines(refit, axis)
+        if found and (
+            shape is None
+            or (len(found["legs"]), -found["legs"][0]["started_at"])
+            > (len(shape["legs"]), -shape["legs"][0]["started_at"])
+        ):
+            shape = found
+    if shape is None:
+        return None
+    aligned = summarize_legs(shape["legs"], pos)
     # The legs can outlast the buffer: their endpoints give the shape's extent,
     # and the buffered reports inside it fill in the track.
     by_time = {
@@ -1647,6 +1689,7 @@ def racetrack(legs, pos, aircraft):
         {p["ts"]: p for p in pos if aligned[0]["started_at"] <= p["ts"] <= aligned[-1]["ended_at"]}
     )
     points = [by_time[stamp] for stamp in sorted(by_time)]
+    centers = shape["centers"]
     runway = _nearest_runway_nm(
         [statistics.fmean(c[0] for c in centers), statistics.fmean(c[1] for c in centers)]
     )
@@ -1666,12 +1709,11 @@ def racetrack(legs, pos, aircraft):
         fields=("lat", "lon"),
         flags=_leg_flags(*aligned),
         tags=tags,
-        legs=len(aligned),
+        racetrack_legs=len(aligned),
         leg_length_nm=round(statistics.fmean(leg["length_nm"] for leg in aligned), 2),
-        axis_heading_deg=round(axis, 1),
-        lateral_spacing_nm=round(spacing, 2),
-        line_repeat_nm=round(repeat, 2),
-        duration_s=round(duration),
+        axis_heading_deg=round(shape["axis"], 1),
+        lateral_spacing_nm=round(shape["spacing"], 2),
+        line_repeat_nm=round(shape["repeat"], 2),
         runway_within_nm=round(runway, 1) if runway is not None else RACETRACK_RUNWAY_CAP_NM,
         episode_start=aligned[0]["started_at"],
     )
