@@ -478,6 +478,14 @@ EVIDENCE_FIELDS = {
             "since": _text,
         }
     ),
+    "foreign_military": _object(
+        {
+            "country": _token,
+            "country_name": _text,
+            "basis": _array(_enum("dbFlags", "military_allocation"), 2),
+            "registration_country": _token,
+        }
+    ),
     "season_record": _object(
         {
             **{

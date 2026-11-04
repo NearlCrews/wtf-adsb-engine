@@ -618,6 +618,40 @@ def candidates(a, now, rarity=None, profiles=None, *, identity=None, band=None):
             78,
             "Database tag",
         )
+    # Outside the flag's block: a military allocation range alone also qualifies.
+    allocation = reference.allocation(a.get("hex"))
+    military_range = reference.military_allocation(a.get("hex")) is True
+    if (flags & 1 or military_range) and allocation and allocation["name"]:
+        groups = {code.lower() for code in reference.country_group(allocation["country"])}
+        if (
+            "us" not in groups
+            and checks.get("allocation_matches_registration") is not False
+            and checks.get("conflict") is not True
+        ):
+            basis = [
+                name
+                for name, on in (("dbFlags", bool(flags & 1)), ("military_allocation", military_range))
+                if on
+            ]
+            add(
+                "foreign_military",
+                "airframes",
+                f"{allocation['name']} military-listed visitor",
+                None,
+                "",
+                f"The aircraft database or the address block marks this address as military, and the block belongs to {allocation['name']}.",
+                "This is a database classification and an address allocation. It does not identify the mission, crew, or purpose of the flight, and a re-registered aircraft can keep an old address.",
+                80,
+                "Database tag and allocation block",
+                {
+                    "foreign_military": {
+                        "country": allocation["country"],
+                        "country_name": allocation["name"],
+                        "basis": basis,
+                        "registration_country": checks.get("registration_country"),
+                    }
+                },
+            )
     if flags & 2:
         add(
             "database_watch",

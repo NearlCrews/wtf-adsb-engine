@@ -163,6 +163,17 @@ class ProjectionTests(unittest.TestCase):
         self.assertIsNone(stories.first_sighting({**block, "scope": "fleet"}))
         self.assertEqual(stories.first_sighting(block)["scope"], "operator")
 
+    def test_foreign_military_block_projects_unchanged_and_unknown_bases_drop(self):
+        block = {
+            "country": "DE",
+            "country_name": "Germany",
+            "basis": ["dbFlags", "military_allocation"],
+            "registration_country": None,
+        }
+        self.assertEqual(export.EVIDENCE({"foreign_military": block})["foreign_military"], block)
+        projected = export.EVIDENCE({"foreign_military": {**block, "basis": ["flag"]}})["foreign_military"]
+        self.assertEqual(projected["basis"], [])
+
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
         source["kind"] = "vfr_code_above_fl180"

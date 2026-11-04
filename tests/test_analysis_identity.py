@@ -158,3 +158,87 @@ class FirstOperatorHere(unittest.TestCase):
         ):
             self.assertIs(rules.identity_checks(light)["airline_callsign_on_light_type"], True)
             self.assertNotIn("first_operator_here", self.kinds_of(light, self.history()))
+
+
+class ForeignMilitary(unittest.TestCase):
+    # The packaged tests carry no identity tables, so the allocation lookups stand in for
+    # them: 3f4a21 in a German block, 43c123 in a United Kingdom military range, and
+    # ae1234 in the US military range.
+    ALLOCATIONS = {
+        "3f4a21": {"country": "DE", "name": "Germany"},
+        "43c123": {"country": "GB", "name": "United Kingdom"},
+        "ae1234": {"country": "US", "name": "United States"},
+    }
+    MILITARY = frozenset({"43c123", "ae1234"})
+    generations = iter(range(-100, -200, -1))
+
+    def setUp(self):
+        self.addCleanup(reference.clear_cache)
+        for patcher in (
+            # A fresh generation keeps the memoized identity checks apart from other tests.
+            patch.object(reference, "GENERATION", next(self.generations)),
+            patch.object(reference, "allocation", side_effect=self.ALLOCATIONS.get),
+            patch.object(reference, "military_allocation", side_effect=self.MILITARY.__contains__),
+            patch.object(reference, "country_group", side_effect=lambda code: frozenset({code.lower()})),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def kinds_of(self, aircraft):
+        return {f.kind: f for f in rules.candidates(aircraft, 1_700_000_000.0)}
+
+    def test_military_flag_with_a_german_address_fires(self):
+        aircraft = {
+            "hex": "3f4a21",
+            "type": "adsb_icao",
+            "r": "54+12",
+            "t": "A400",
+            "dbFlags": 1,
+            "lat": 42.5,
+            "lon": -83.4,
+            "alt_baro": 24000,
+            "gs": 300,
+        }
+        found = self.kinds_of(aircraft)
+        self.assertIn("foreign_military", found)
+        self.assertIn("military", found)
+        block = found["foreign_military"].evidence["foreign_military"]
+        self.assertEqual(block["country"], "DE")
+        self.assertEqual(block["country_name"], "Germany")
+        self.assertEqual(block["basis"], ["dbFlags"])
+        self.assertEqual(found["foreign_military"].score, 80)
+
+    def test_us_military_does_not_fire(self):
+        aircraft = {
+            "hex": "ae1234",
+            "type": "adsb_icao",
+            "r": "98-0001",
+            "t": "C32",
+            "dbFlags": 1,
+            "lat": 42.5,
+            "lon": -83.4,
+            "alt_baro": 30000,
+            "gs": 450,
+        }
+        self.assertNotIn("foreign_military", self.kinds_of(aircraft))
+
+    def test_military_allocation_without_flag_fires_with_that_basis(self):
+        aircraft = {
+            "hex": "43c123",
+            "type": "adsb_icao",
+            "r": "ZZ123",
+            "t": "A332",
+            "dbFlags": 0,
+            "lat": 42.5,
+            "lon": -83.4,
+            "alt_baro": 30000,
+            "gs": 450,
+        }
+        found = self.kinds_of(aircraft)
+        block = found["foreign_military"].evidence["foreign_military"]
+        self.assertEqual(block["basis"], ["military_allocation"])
+        self.assertEqual(block["country_name"], "United Kingdom")
+
+    def test_civil_address_without_flag_or_allocation_does_not_fire(self):
+        aircraft = {"hex": "3f4a21", "type": "adsb_icao", "r": "D-AIMA", "t": "A388", "dbFlags": 0}
+        self.assertNotIn("foreign_military", self.kinds_of(aircraft))
