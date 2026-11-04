@@ -9,6 +9,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.error import HTTPError
 
 from wtf_adsb_engine.analysis import app, curation, enrichment_rules, export, selection, typecheck
@@ -97,12 +98,8 @@ class MismatchStories(unittest.TestCase):
         self.assertNotIn("type_disagrees", event["selection"]["blocking_rules"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class UnregisteredRecheck(unittest.TestCase):
-    """An open unregistered_address finding is queued again once its saved check is a week old."""
+    """An unregistered_address finding is queued again once its saved check is a week old."""
 
     DAY = 86400
 
@@ -112,38 +109,80 @@ class UnregisteredRecheck(unittest.TestCase):
         self.path = Path(self.directory.name) / "journal.sqlite3"
         app.initialize(self.path)
 
-    def add(self, fetched_at):
-        """Record a finding first seen ten days ago, with a settled check fetched at `fetched_at`."""
+    def add(self, address, fetched_at, *, first_seen=NOW - 10 * DAY, last_seen=NOW - 3600):
+        """Record a finding with a settled check fetched at `fetched_at`."""
         finding = Finding(
             "unregistered_address", "oddities", "Test", None, "", "why", "explanation", 70, "Test", {}
         )
-        aircraft = {"hex": "a1b2c3", "r": "", "t": "", "type": "adsb_icao", "alt_baro": 9000}
+        aircraft = {"hex": address, "r": "", "t": "", "type": "adsb_icao", "alt_baro": 9000}
         with app.connect(self.path) as db:
-            app.record(db, aircraft, finding, NOW - 10 * self.DAY, NOW - 3600, hits=6)
-            typecheck.remember(db, "a1b2c3", None, fetched_at)
+            app.record(db, aircraft, finding, first_seen, last_seen, hits=6)
+            typecheck.remember(db, address, None, fetched_at)
             # The first check settled the event, so only the recheck rule can queue it again.
-            for event in typecheck.pending(db, 0, now=fetched_at):
+            for event in typecheck.pending(db, 0, address, now=fetched_at):
                 typecheck.attach(db, event, fetched_at)
 
     def addresses(self):
         with app.connect(self.path) as db:
             return [event["hex"] for event in typecheck.pending(db, since=0, now=NOW)]
 
+    def blocks(self):
+        with app.connect(self.path) as db:
+            rows = db.execute("SELECT hex, evidence FROM events ORDER BY hex").fetchall()
+        return {row["hex"]: json.loads(row["evidence"]).get("type_check") for row in rows}
+
     def test_a_check_older_than_a_week_is_queued_again(self):
-        self.add(NOW - 8 * self.DAY)
+        self.add("a1b2c3", NOW - 8 * self.DAY)
         self.assertEqual(self.addresses(), ["a1b2c3"])
 
     def test_a_recent_check_is_not_queued(self):
-        self.add(NOW - 1 * self.DAY)
+        self.add("a1b2c3", NOW - 1 * self.DAY)
         self.assertEqual(self.addresses(), [])
 
-    def test_the_worker_looks_the_address_up_again_and_replaces_the_saved_check(self):
-        self.add(NOW - 8 * self.DAY)
-        result = typecheck.run_once(
-            self.path, now=NOW, opener=responses(not_found(), not_found()), enabled_override=True
+    def test_the_window_follows_the_first_sighting_not_the_last(self):
+        # A one-off sighting checked at first sight is rechecked after it leaves view.
+        self.add("a1b2c3", NOW - 9 * self.DAY, first_seen=NOW - 9 * self.DAY, last_seen=NOW - 9 * self.DAY)
+        self.add("b2c3d4", NOW - 8 * self.DAY, first_seen=NOW - 31 * self.DAY, last_seen=NOW - 30 * self.DAY)
+        self.assertEqual(self.addresses(), ["a1b2c3"])
+
+    def test_new_checks_keep_priority_within_the_pending_limit(self):
+        self.add("a1b2c3", NOW - 8 * self.DAY)
+        finding = Finding(
+            "type_speed_mismatch", "oddities", "Test", 500, "kn", "why", "explanation", 74, "Test", {}
         )
-        self.assertEqual(result["state"], "checked")
-        self.assertEqual(result["hex"], "a1b2c3")
+        aircraft = {"hex": "c06173", "r": "C-GKXM", "t": "DH8D", "type": "adsb_icao", "gs": 500}
+        with app.connect(self.path) as db:
+            app.record(db, aircraft, finding, NOW - 600, NOW - 60, hits=6)
+        self.assertEqual(self.addresses(), ["c06173", "a1b2c3"])
+        with patch.object(typecheck, "PENDING_LIMIT", 1):
+            self.assertEqual(self.addresses(), ["c06173"])
+
+    def test_one_pass_rechecks_one_address_and_leaves_the_other_blocks_alone(self):
+        self.add("a1b2c3", NOW - 8 * self.DAY)
+        self.add("b2c3d4", NOW - 9 * self.DAY)
+        before = self.blocks()
+        result = typecheck.run_once(
+            self.path, now=NOW, opener=responses(not_found(), HEXDB), enabled_override=True
+        )
+        self.assertEqual((result["state"], result["hex"], result["attached"]), ("checked", "a1b2c3", 1))
+        after = self.blocks()
+        # The rechecked address carries the fresh answer; the other keeps its week-old block.
+        self.assertEqual((after["a1b2c3"]["source"], after["a1b2c3"]["type_code"]), ("hexdb", "E295"))
+        self.assertEqual(after["a1b2c3"]["checked_at"], NOW)
+        self.assertEqual(after["b2c3d4"], before["b2c3d4"])
         with app.connect(self.path) as db:
             self.assertEqual(typecheck.saved(db, "a1b2c3", NOW)["fetched_at"], NOW)
-            self.assertEqual(typecheck.pending(db, since=0, now=NOW), [])
+        self.assertEqual(self.addresses(), ["b2c3d4"])
+
+    def test_a_failed_recheck_keeps_the_settled_block(self):
+        self.add("a1b2c3", NOW - 8 * self.DAY)
+        before = self.blocks()
+        unavailable = HTTPError("https://example.invalid/", 503, "Unavailable", {}, io.BytesIO(b""))
+        result = typecheck.run_once(self.path, now=NOW, opener=responses(unavailable), enabled_override=True)
+        self.assertEqual(result["state"], "unavailable")
+        self.assertEqual(self.blocks(), before)
+        self.assertEqual(self.addresses(), ["a1b2c3"])
+
+
+if __name__ == "__main__":
+    unittest.main()

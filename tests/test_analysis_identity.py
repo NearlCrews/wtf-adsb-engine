@@ -239,6 +239,31 @@ class ForeignMilitary(unittest.TestCase):
         self.assertEqual(block["basis"], ["military_allocation"])
         self.assertEqual(block["country_name"], "United Kingdom")
 
+    def test_a_military_range_alone_corroborates_the_identity(self):
+        aircraft = {"hex": "43c123", "type": "adsb_icao", "r": "ZZ123", "t": "A332", "dbFlags": 0}
+        checks = dict(rules.UNCOMPUTED_IDENTITY)
+        self.assertTrue(rules.identity_corroborated(checks, aircraft))
+        self.assertFalse(
+            rules.identity_corroborated(checks, {**aircraft, "hex": "3f4a21", "r": "", "dbFlags": 1})
+        )
+        loaded = reference.dataset
+        # With the identity tables loaded, an uncorroborated identity-led finding is flagged.
+        with patch.object(
+            reference, "dataset", side_effect=lambda name: {} if name == "identity" else loaded(name)
+        ):
+            found = {f.kind: f for f in rules.candidates(aircraft, 1_700_000_000.0, identity=checks)}
+            flagged = {
+                f.kind: f
+                for f in rules.candidates(
+                    {**aircraft, "hex": "3f4a21", "r": "", "dbFlags": 1}, 1_700_000_000.0, identity=checks
+                )
+            }
+        self.assertEqual(
+            found["foreign_military"].evidence["foreign_military"]["basis"], ["military_allocation"]
+        )
+        self.assertNotIn("identity_unverified", found["foreign_military"].evidence.get("quality_flags", []))
+        self.assertIn("identity_unverified", flagged["foreign_military"].evidence["quality_flags"])
+
     def test_civil_address_without_flag_or_allocation_does_not_fire(self):
         aircraft = {"hex": "3f4a21", "type": "adsb_icao", "r": "D-AIMA", "t": "A388", "dbFlags": 0}
         self.assertNotIn("foreign_military", self.kinds_of(aircraft))

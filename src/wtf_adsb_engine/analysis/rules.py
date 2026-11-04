@@ -530,8 +530,9 @@ def performance_thresholds(aircraft, profiles=None):
 def identity_corroborated(checks, aircraft):
     """At least one check ties the database identity to this address or broadcast.
 
-    A military-flagged record in an address range used for military aircraft
-    counts too: such aircraft usually carry serials, not civil registrations.
+    An address in a range used for military aircraft counts too, and so does a
+    military-flagged record with a military serial: such aircraft usually carry
+    serials, not civil registrations.
     """
     if any(
         checks.get(key) is True
@@ -542,11 +543,9 @@ def identity_corroborated(checks, aircraft):
         )
     ):
         return True
-    if not _db_flags(aircraft) & 1:
-        return False
-    return reference.military_allocation(aircraft.get("hex")) is True or bool(
-        MILITARY_SERIAL.fullmatch(_text(aircraft.get("r")))
-    )
+    if reference.military_allocation(aircraft.get("hex")) is True:
+        return True
+    return bool(_db_flags(aircraft) & 1) and bool(MILITARY_SERIAL.fullmatch(_text(aircraft.get("r"))))
 
 
 def _solver_field(aircraft, field, sources=("mlat",)):
