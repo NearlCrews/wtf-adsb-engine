@@ -524,6 +524,7 @@ EVIDENCE_FIELDS = {
                 key: _numeric
                 for key in (
                     "previous_max_gs",
+                    "margin_kn",
                     "baseline_days",
                     "sustained_seconds",
                     "samples",

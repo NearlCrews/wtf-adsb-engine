@@ -227,10 +227,35 @@ class RecordPlausibilityTests(unittest.TestCase):
         self.assertIsNone(self.record("B738", 650, 37000, 540))
         # Near the surface only 60 kn of wind are allowed over the 355-KTAS Vmo equivalent.
         self.assertIsNone(self.record("B738", 440, 3000, 400))
-        self.assertEqual(self.record("B738", 410, 3000, 400).value, 410)
+        self.assertEqual(self.record("B738", 410, 3000, 395).value, 410)
         # An unknown altitude uses the largest limiting airspeed and allowance.
         self.assertEqual(self.record("B738", 650, None, 540).value, 650)
         self.assertIsNone(self.record("B738", 680, None, 540))
+
+    def test_record_needs_a_margin_and_a_30_day_baseline(self):
+        # report()'s address and registration agree, so no identity conflict refuses it.
+        aircraft = report(t="SR22")
+        season = {
+            "type": "SR22",
+            "season_start": "2026-09-01",
+            "baseline_start": "2026-09-01",
+            "max_gs": 200.0,
+            "addresses": 25,
+            "baseline_days": 35,
+        }
+        sustained = {"gs": 205.0, "duration_seconds": 90, "samples": 6, "source": "adsb_icao"}
+        self.assertIsNone(rules.seasonal_speed_record(aircraft, season, sustained=sustained))
+        sustained["gs"] = 211.0
+        found = rules.seasonal_speed_record(aircraft, season, sustained=sustained)
+        self.assertEqual(found.evidence["season_record"]["margin_kn"], 11.0)
+        self.assertIn("by 11 kn", found.why)
+        season["baseline_days"] = 20
+        self.assertIsNone(rules.seasonal_speed_record(aircraft, season, sustained=sustained))
+
+    def test_a_fast_type_needs_a_three_percent_margin(self):
+        # 3% of 540 kn is 16.2 kn, more than the 10-kn floor.
+        self.assertIsNone(self.record("CRJ7", 555, 37000, 540))
+        self.assertEqual(self.record("CRJ7", 557, 37000, 540).value, 557)
 
     def test_without_the_envelope_file_the_rated_gate_still_applies(self):
         with patch.object(reference, "envelope", return_value=None):

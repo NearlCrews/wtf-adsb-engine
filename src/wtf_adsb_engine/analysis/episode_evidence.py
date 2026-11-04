@@ -41,7 +41,7 @@ METRICS = {
 PARTICIPANT_METRICS = {"median_gs_kn": ("Median ground speed for the UTC day", "kn")}
 # Episode metrics shown with their own timestamp or as a rule, not over the window.
 PEAK_METRICS = {"peak_rate_fpm": "peak_at_utc"}
-RULE_METRICS = {"threshold_fpm"}
+RULE_METRICS = {"threshold_fpm", "qualifying_seconds_required", "qualifying_reports_required"}
 # Words used by the decoder's resolution-advisory text; any other text is dropped.
 ADVISORY_WORDS = {
     "climb",

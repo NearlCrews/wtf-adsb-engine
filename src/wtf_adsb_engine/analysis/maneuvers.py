@@ -41,6 +41,20 @@ from .telemetry import (
 
 VERSION = "maneuvers-v4"
 HIGH_RATE_FPM = 7000
+# Rapid-descent rules by starting pressure altitude, highest floor first, as
+# (floor_ft, threshold_fpm, seconds, reports): the rate a run of consecutive
+# reports must hold, and how long and how many reports that run needs. Ordinary
+# descents from 10,000 ft or higher reach higher rates, so they need a faster,
+# longer run.
+DESCENT_BANDS = ((10000, 6000, 60, 6), (0, 4500, 30, 4))
+# Climbs, and any caller's explicit threshold, keep one rule in the same shape.
+CLIMB_RULE = (0, 4500, 30, 4)
+# The exceptional descent window (curation.exceptional): it also confirms a
+# descent whose altitude band asks for more, so no band demotes such a descent.
+HIGH_RATE_RULE = (0, HIGH_RATE_FPM, 30, 4)
+# Reports at or beyond the lowest rule's rate open and hold a vertical episode;
+# each finding then applies its own rule.
+EPISODE_FPM = min(rule[1] for rule in (*DESCENT_BANDS, CLIMB_RULE))
 EXTREME_RATE_FPM = 12000
 RATE_CONFLICT_FPM = 1500
 # Transponder codes stay one episode across report gaps of up to a minute.
@@ -72,6 +86,8 @@ METRICS = {
     "threshold_fpm": ("Detection threshold magnitude", "ft/min"),
     "qualifying_duration_seconds": ("Consecutive reports above the detection threshold", "s"),
     "qualifying_sample_count": ("Consecutive reports above the detection threshold", "samples"),
+    "qualifying_seconds_required": ("Required duration of consecutive reports above the threshold", "s"),
+    "qualifying_reports_required": ("Required consecutive reports above the threshold", "samples"),
     "sustained_rate_fpm": ("Slowest signed rate in the high-rate interval", "ft/min"),
     "sustained_duration_seconds": ("High-rate interval duration", "s"),
     "sustained_sample_count": ("High-rate interval reports", "samples"),
@@ -521,7 +537,38 @@ def _corroborated(pairs):
     return result
 
 
-def _rate_run(pairs, direction, threshold):
+def descent_rule(start_altitude_ft):
+    """(floor_ft, threshold_fpm, seconds, reports) for a descent starting at this pressure altitude."""
+    for band in DESCENT_BANDS:
+        if (start_altitude_ft or 0) >= band[0]:
+            return band
+    return DESCENT_BANDS[-1]
+
+
+def _vertical_rule(pairs, direction, start_altitude_ft, threshold=None):
+    """(threshold_fpm, seconds, reports) one episode is judged by.
+
+    An explicit threshold keeps the flat 30 s and 4-report window, and a climb
+    takes CLIMB_RULE. A descent takes the band of its start altitude; when the
+    band's run does not hold over ``pairs`` (the usable (point, rate) reports)
+    but HIGH_RATE_RULE's does, it takes HIGH_RATE_RULE instead.
+    """
+    if threshold is not None:
+        return threshold, CLIMB_RULE[2], CLIMB_RULE[3]
+    if direction > 0:
+        return CLIMB_RULE[1:]
+    band = descent_rule(start_altitude_ft)[1:]
+    for rule in (band, HIGH_RATE_RULE[1:]):
+        if _holds(_rate_run(pairs, direction, *rule), *rule[1:]):
+            return rule
+    return band
+
+
+def _holds(run, seconds, reports):
+    return len(run) >= reports and run[-1][0]["ts"] - run[0][0]["ts"] >= seconds
+
+
+def _rate_run(pairs, direction, threshold, seconds=30, reports=4):
     """Choose a consecutive run before evidence is downsampled to 96 reports."""
     runs, run = [], []
     for point, rate in pairs:
@@ -534,8 +581,7 @@ def _rate_run(pairs, direction, threshold):
         runs.append(run)
 
     def order(run):
-        duration = run[-1][0]["ts"] - run[0][0]["ts"]
-        return len(run) >= 4 and duration >= 30, duration, len(run)
+        return _holds(run, seconds, reports), run[-1][0]["ts"] - run[0][0]["ts"], len(run)
 
     return max(runs, key=order, default=[])
 
@@ -572,11 +618,13 @@ def _emergency_profile(points, observed, reference, after):
     return found
 
 
-def _vertical_finding(episode, points, threshold, state="active", reason=None, at=None):
+def _vertical_finding(episode, points, threshold=None, state="active", reason=None, at=None):
     """The rapid climb or descent finding for one rate episode, or None.
 
     ``episode["reports"]`` holds (point, rate, repeat) for each report in the
     episode. ``at`` is the report that ended it, so the saved state updates.
+    ``threshold`` None applies the episode's own rule (_vertical_rule), which
+    the finding records with its threshold and qualifying window.
     """
     reports = episode["reports"]
     observed = [p for p, _, _ in reports]
@@ -591,15 +639,18 @@ def _vertical_finding(episode, points, threshold, state="active", reason=None, a
         if ok:
             trusted.append(pair)
         (usable if ok or abs(pair[1]) <= EXTREME_RATE_FPM else outliers).append(pair)
+    threshold, seconds_required, reports_required = _vertical_rule(
+        usable, direction, altitude(observed[0]), threshold
+    )
     qualifying = [pair for pair in usable if pair[1] * direction >= threshold]
     if len(qualifying) < 2 or qualifying[-1][0]["ts"] - qualifying[0][0]["ts"] < 10:
         return None
     # Peak and high-rate metrics use only rates confirmed by a neighbouring report.
     supported = [pair for pair in trusted if pair[1] * direction >= threshold]
     peak_point, peak = max(supported or qualifying, key=lambda pair: abs(pair[1]))
-    run = _rate_run(usable, direction, threshold)
+    run = _rate_run(usable, direction, threshold, seconds_required, reports_required)
     run_duration = run[-1][0]["ts"] - run[0][0]["ts"]
-    confirmed = len(run) >= 4 and run_duration >= 30
+    confirmed = _holds(run, seconds_required, reports_required)
     if not confirmed and abs(peak) < HIGH_RATE_FPM:
         return None
     flags, tags = [], []
@@ -678,6 +729,8 @@ def _vertical_finding(episode, points, threshold, state="active", reason=None, a
         altitude_reference=reference,
         rate_field=field,
         threshold_fpm=threshold,
+        qualifying_seconds_required=seconds_required,
+        qualifying_reports_required=reports_required,
         distinct_report_count=len(distinct),
         state=state,
         episode_start=observed[0]["ts"],
@@ -706,8 +759,12 @@ def _end_reason(point, rate, signature, previous):
     return None
 
 
-def vertical(points, threshold=4500):
+def vertical(points, threshold=None):
+    """Rapid climb and descent findings. ``threshold`` None applies each
+    episode's rule (descent_rule, CLIMB_RULE); a number applies it to every
+    episode with the flat 30 s and 4-report window."""
     results, active, previous, preferred, prior = [], None, None, None, None
+    opening = EPISODE_FPM if threshold is None else threshold
 
     def finish(episode, state="active", reason=None, at=None):
         if episode and (finding := _vertical_finding(episode, points, threshold, state, reason, at)):
@@ -737,11 +794,11 @@ def vertical(points, threshold=4500):
         if p.get("ground") or rate is None:
             continue
         direction = 1 if rate > 0 else -1
-        if active and direction != active["direction"] and abs(rate) >= threshold:
+        if active and direction != active["direction"] and abs(rate) >= opening:
             finish(active, "recovered", "recovered", p["ts"])
             active = None
         if active is None:
-            if abs(rate) < threshold:
+            if abs(rate) < opening:
                 continue
             active = {
                 "reports": [],
@@ -752,7 +809,7 @@ def vertical(points, threshold=4500):
             }
         active["reports"].append((p, rate, _repeat(active["reports"], p, field, rate)))
         active["conflict"] = active["conflict"] or conflict
-        if rate * active["direction"] < threshold * 0.65:
+        if rate * active["direction"] < opening * 0.65:
             if active["recovery"] is None:
                 active["recovery"] = p["ts"]
             if p["ts"] - active["recovery"] >= 20:
@@ -3217,7 +3274,7 @@ def _close_previous(samples, segment, gap, split, evaluate):
 def analyze(
     samples,
     aircraft,
-    threshold=4500,
+    threshold=None,
     *,
     orbit=None,
     now=None,

@@ -215,7 +215,10 @@ SEASON_SAMPLE_GAP_SECONDS = 45
 # A day counts toward coverage with at least an hour of collection.
 COVERAGE_SECONDS = 3600
 # A season record needs a baseline of at least this many days of saved reports.
-SEASON_MIN_BASELINE_DAYS = 14
+SEASON_MIN_BASELINE_DAYS = 30
+# A season record beats the previous maximum by at least the larger of these:
+# a fixed number of knots, or a fraction of the previous maximum.
+RECORD_MARGIN = (10, 0.03)
 # Meteorological seasons begin on these UTC months.
 SEASON_MONTHS = ((12, "winter"), (9, "autumn"), (6, "summer"), (3, "spring"))
 
@@ -1539,6 +1542,8 @@ def seasonal_speed_record(aircraft, season_max, *, sustained=None, identity=None
     unless the baseline reaches it. "baseline_days" is how many days the
     baseline covers, from its first whole UTC day to the window's end; a record
     needs SEASON_MIN_BASELINE_DAYS of them, and a missing count is a refusal.
+    The speed beats "max_gs" by at least RECORD_MARGIN, so a reading a few
+    knots past the old maximum is no record.
     sustained: {"gs" (the lowest speed in the window), "duration_seconds",
     "samples", "source"} from the caller's confirmation window. The caller has
     already refused a speed beyond the listed type's envelope or rated limit
@@ -1568,7 +1573,7 @@ def seasonal_speed_record(aircraft, season_max, *, sustained=None, identity=None
         or baseline_days < SEASON_MIN_BASELINE_DAYS
         or gs is None
         or previous is None
-        or not previous < gs <= MAX_PLAUSIBLE_GS_KT
+        or not previous + max(RECORD_MARGIN[0], RECORD_MARGIN[1] * previous) <= gs <= MAX_PLAUSIBLE_GS_KT
     ):
         return None
     start = season_max.get("season_start")
@@ -1583,6 +1588,7 @@ def seasonal_speed_record(aircraft, season_max, *, sustained=None, identity=None
         "samples": samples,
         "source": sustained["source"],
         "baseline_days": baseline_days,
+        "margin_kn": round(gs - previous, 1),
     }
     finding = Finding(
         "seasonal_speed_record",
@@ -1590,7 +1596,7 @@ def seasonal_speed_record(aircraft, season_max, *, sustained=None, identity=None
         f"Fastest {typecode} ground speed here since {baseline}",
         gs,
         "kn",
-        f"Direct ADS-B reports stayed at or above {gs:,.0f} kn for {duration:.0f} seconds, above this station's previous {typecode} maximum of {previous:,.0f} kn since {baseline}.",
+        f"Direct ADS-B reports stayed at or above {gs:,.0f} kn for {duration:.0f} seconds, above this station's previous {typecode} maximum of {previous:,.0f} kn since {baseline}, by {gs - previous:,.0f} kn.",
         "Ground speed includes wind, and a tailwind usually explains most of a record. This compares retained reports from this station only; it is not an airspeed or aircraft performance record.",
         76,
         "Sustained direct ADS-B reports",
