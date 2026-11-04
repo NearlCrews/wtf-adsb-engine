@@ -743,5 +743,94 @@ class AerobaticPractice(unittest.TestCase):
         self.assertIn("E330", maneuvers.aerobatic_types())
 
 
+class RacetrackOrbit(unittest.TestCase):
+    def legs(
+        self, *, length_nm=12.0, spacing_nm=6.0, count=4, leg_seconds=720, turn_seconds=180, drift_nm=0.0
+    ):
+        lat0, lon0 = 42.0, -84.0
+        dlon = 1 / (60 * math.cos(math.radians(lat0)))
+        legs, t = [], 1_700_000_000.0
+        for i in range(count):
+            east = i % 2 == 0
+            lat = lat0 + (spacing_nm / 60 if east else 0) + (drift_nm * i / 60)
+            start = [lat, lon0] if east else [lat, lon0 + length_nm * dlon]
+            end = [lat, lon0 + length_nm * dlon] if east else [lat, lon0]
+            legs.append(
+                {
+                    "started_at": t,
+                    "ended_at": t + leg_seconds,
+                    "heading": 90.0 if east else 270.0,
+                    "length_nm": length_nm,
+                    "start": start,
+                    "end": end,
+                }
+            )
+            t += leg_seconds + turn_seconds
+        return legs
+
+    def pos(self, legs):
+        return [
+            {
+                "ts": leg["started_at"],
+                "lat": leg["start"][0],
+                "lon": leg["start"][1],
+                "source": "adsb_icao",
+                "alt_baro": 25000,
+            }
+            for leg in legs
+        ] + [
+            {
+                "ts": legs[-1]["ended_at"],
+                "lat": legs[-1]["end"][0],
+                "lon": legs[-1]["end"][1],
+                "source": "adsb_icao",
+                "alt_baro": 25000,
+            }
+        ]
+
+    def test_four_reciprocal_long_legs_form_a_racetrack(self):
+        legs = self.legs()
+        aircraft = {"hex": "ae1234", "t": "K35R", "dbFlags": 1, "r": "58-0001"}
+        found = maneuvers.racetrack(legs, self.pos(legs), aircraft)
+        self.assertIsNotNone(found)
+        info = found.evidence["maneuver"]
+        self.assertEqual(info["legs"], 4)
+        self.assertAlmostEqual(info["lateral_spacing_nm"], 6.0, delta=0.3)
+        self.assertGreaterEqual(info["duration_s"], 2400)
+        self.assertIn("tanker_type", info["context_tags"])
+        self.assertIn("military_flag", info["context_tags"])
+
+    def test_short_legs_three_legs_or_wide_spacing_do_not(self):
+        self.assertIsNone(
+            maneuvers.racetrack(self.legs(length_nm=6.0), self.pos(self.legs(length_nm=6.0)), {})
+        )
+        self.assertIsNone(maneuvers.racetrack(self.legs(count=3), self.pos(self.legs(count=3)), {}))
+        self.assertIsNone(
+            maneuvers.racetrack(self.legs(spacing_nm=20.0), self.pos(self.legs(spacing_nm=20.0)), {})
+        )
+
+    def test_stepping_lines_are_not_a_racetrack(self):
+        legs = self.legs(drift_nm=1.5)
+        self.assertIsNone(maneuvers.racetrack(legs, self.pos(legs), {}))
+
+    def test_trajectory_joins_saved_and_buffered_legs_into_a_racetrack(self):
+        track = Track(altitude=25000, speed=240)
+        for index in range(6):
+            track.straight(450)
+            if index < 5:
+                track.turn(180, 3.0)
+        points = sample(track)
+        half = len(points) // 2
+        history = maneuvers.straight_legs(points[:half])
+        aircraft = {**JET, "t": "K35R", "dbFlags": 1}
+        found = {f.kind: f for f in maneuvers.analyze(points[half:], aircraft, legs=history)}
+        self.assertIn("racetrack_orbit", found)
+        self.assertNotIn("survey_grid", found)
+        info = found["racetrack_orbit"].evidence["maneuver"]
+        self.assertEqual(info["legs"], 6)
+        self.assertAlmostEqual(info["lateral_spacing_nm"], 2.55, delta=0.2)
+        self.assertEqual(info["quality_flags"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

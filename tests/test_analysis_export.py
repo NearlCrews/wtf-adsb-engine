@@ -193,6 +193,20 @@ class ProjectionTests(unittest.TestCase):
         dropped = export.EVIDENCE({"maneuver": {**block, "basis": "pilot_said_so"}})["maneuver"]
         self.assertNotIn("basis", dropped)
 
+    def test_racetrack_maneuver_metrics_and_tags_project(self):
+        block = {
+            "kind": "racetrack_orbit",
+            "legs": 4,
+            "leg_length_nm": 12.0,
+            "axis_heading_deg": 90.0,
+            "lateral_spacing_nm": 6.0,
+            "line_repeat_nm": 0.0,
+            "duration_s": 3420,
+            "runway_within_nm": 50.0,
+            "context_tags": ["airport_context", "military_flag", "tanker_type"],
+        }
+        self.assertEqual(export.EVIDENCE({"maneuver": block})["maneuver"], block)
+
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
         source["kind"] = "vfr_code_above_fl180"

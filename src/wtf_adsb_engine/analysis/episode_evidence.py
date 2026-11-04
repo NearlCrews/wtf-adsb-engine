@@ -141,6 +141,9 @@ CONTEXT_NOTES = {
     "refuelling_like": "One aircraft is a tanker type. The data cannot show whether fuel was transferred.",
     "aerotow_like": "A glider and another aircraft climbed together within 0.2 NM, as in an aerotow; the data cannot confirm a tow.",
     "registry_gap": "The aircraft database lists no registration for this transmitting address. Registries lag new registrations, and some States publish none.",
+    "tanker_type": "The aircraft is a tanker type. Tankers often wait on racetrack orbits, but the data cannot show whether fuel was transferred.",
+    "military_flag": "The aircraft database marks this address as military. The purpose of the flight is not published.",
+    "airport_context": "The racetrack was centered within 10 NM of a mapped runway, where holding and practice approaches are routine.",
 }
 # Kinds whose headline speed or position MLAT would estimate rather than receive.
 MLAT_ESTIMATE_KINDS = set(kinds.where(mlat_estimate=True))
