@@ -300,3 +300,55 @@ class JournalNoise(unittest.TestCase):
             archive = sorted(app.ARCHIVE_ORIGINS)[0]
             self.assertIsNotNone(app.record(db, a, within, 0, 60, origin=archive))
             self.assertEqual(db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 4)
+
+    def test_prune_removes_settled_within_rows_after_a_week(self):
+        now = 1_800_000_000.0
+        day = 86400
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "journal.sqlite3"
+            app.initialize(path)
+            db = app.connect(path)
+            self.addCleanup(db.close)
+
+            def saved(address, age_days, verdict):
+                a = {
+                    "hex": address,
+                    "type": "adsb_icao",
+                    "r": "N1",
+                    "t": "A320",
+                    "gs": 620,
+                    "alt_baro": 35000,
+                }
+                finding = rules.Finding(
+                    "above_rated_speed",
+                    "performance",
+                    "t",
+                    620,
+                    "kn",
+                    "w",
+                    "e",
+                    75,
+                    evidence={"rated_limit": {"verdict": "exceeded"}},
+                )
+                seen = now - age_days * day
+                identifier = app.record(db, a, finding, seen - 60, seen)
+                # The wind worker settles the verdict on the saved row, as wind.py does.
+                db.execute(
+                    "UPDATE events SET evidence=json_set(evidence,'$.rated_limit.verdict',?) WHERE id=?",
+                    (verdict, identifier),
+                )
+                db.execute(
+                    "INSERT INTO event_reviews VALUES (?,?,?,?,?,?)",
+                    (identifier, address, "above_rated_speed", seen - 60, "routine", seen),
+                )
+                return identifier
+
+            old_within = saved("a00001", 8, "within")
+            recent_within = saved("a00002", 2, "within")
+            old_exceeded = saved("a00003", 8, "exceeded")
+            app.Detector(path)._prune(db, now)
+            kept = {row[0] for row in db.execute("SELECT id FROM events")}
+            self.assertEqual(kept, {recent_within, old_exceeded})
+            reviews = {row[0] for row in db.execute("SELECT event_id FROM event_reviews")}
+            self.assertNotIn(old_within, reviews)
+            self.assertEqual(app.NOISE_RETENTION, 7 * day)

@@ -552,6 +552,9 @@ def _implausible_speed(db, address, session, previous):
 
 # Live readings the journal keeps out (_noise): no story or review ever uses them.
 NOISE_KINDS = frozenset({"above_rated_speed", "above_rated_altitude", "fast", "high"})
+# Saved live rows that became noise (a rated verdict the wind worker settled as
+# "within") are pruned once last seen this long ago (Detector._prune_noise).
+NOISE_RETENTION = 7 * 86400
 
 
 def _noise(a, finding):
@@ -2517,6 +2520,7 @@ class Detector:
             "DELETE FROM events WHERE id IN (SELECT id FROM events ORDER BY last_seen DESC LIMIT -1 OFFSET ?)",
             (selection.EVENT_LIMIT,),
         )
+        self._prune_noise(db, now)
         for table in ("event_reviews", "wind_retries"):
             db.execute(f"DELETE FROM {table} WHERE event_id NOT IN (SELECT id FROM events)")
         # The wind worker never asks about an event older than its lookback again.
@@ -2547,6 +2551,45 @@ class Detector:
         self.season_own = {k: v for k, v in self.season_own.items() if k in self.previous}
         season, _ = rules.season_start(now)
         self.season_stats = {k: v for k, v in self.season_stats.items() if k[0] == season}
+
+    @staticmethod
+    def _prune_noise(db, now):
+        """Delete live NOISE_KINDS rows that _noise() refuses, last seen NOISE_RETENTION ago.
+
+        A rated row the wind worker settled as "within" is the usual one. The engine
+        journal keeps no export cursor, so age alone decides; _prune then removes the
+        dependent review and retry rows.
+        """
+        names = sorted(NOISE_KINDS)
+        rows = db.execute(
+            f"""SELECT id,kind,category,title,value,unit,score,evidence FROM events
+            WHERE origin=? AND last_seen<? AND kind IN ({",".join("?" * len(names))})""",
+            (LIVE_ORIGIN, now - NOISE_RETENTION, *names),
+        ).fetchall()
+        noise = []
+        for row in rows:
+            try:
+                evidence = json.loads(row["evidence"])
+            except TypeError, ValueError:
+                continue
+            if not isinstance(evidence, dict):
+                continue
+            aircraft = evidence.get("aircraft") if isinstance(evidence.get("aircraft"), dict) else {}
+            finding = Finding(
+                row["kind"],
+                row["category"],
+                row["title"],
+                row["value"],
+                row["unit"] or "",
+                "",
+                "",
+                row["score"],
+                evidence=evidence,
+            )
+            if _noise(aircraft, finding):
+                noise.append((row["id"],))
+        db.executemany("DELETE FROM events WHERE id=?", noise)
+        return len(noise)
 
 
 # Every numeric, envelope or rated kind that selection confirms has a measured field.
