@@ -305,6 +305,7 @@ METRIC_FIELDS = {
         "rate_lost",
     ),
     "turn_direction": _enum("left", "right"),
+    "basis": _enum("type", "turn_rate"),
     "altitude_reference": _enum("alt_baro", "alt_geom", "archive_alt"),
     "rate_field": _enum("baro_rate", "geom_rate", "derived_baro_rate", "derived_geom_rate"),
     "anomaly_type": _enum("position_jump", "position_quality_drop"),

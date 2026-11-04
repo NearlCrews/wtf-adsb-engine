@@ -182,6 +182,17 @@ class ProjectionTests(unittest.TestCase):
         dropped = export.EVIDENCE({"unregistered": {**block, "source": "radio"}})["unregistered"]
         self.assertNotIn("source", dropped)
 
+    def test_aerobatic_maneuver_metrics_and_basis_project(self):
+        block = {
+            "kind": "aerobatic_practice",
+            "span_nm": 1.49,
+            "max_turn_rate_dps": 7.2,
+            "basis": "turn_rate",
+        }
+        self.assertEqual(export.EVIDENCE({"maneuver": block})["maneuver"], block)
+        dropped = export.EVIDENCE({"maneuver": {**block, "basis": "pilot_said_so"}})["maneuver"]
+        self.assertNotIn("basis", dropped)
+
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
         source["kind"] = "vfr_code_above_fl180"

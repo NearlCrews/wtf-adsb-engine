@@ -687,5 +687,61 @@ class SurveyGridTests(unittest.TestCase):
         self.assertGreaterEqual(info["duration_seconds"], 1800)
 
 
+class AerobaticPractice(unittest.TestCase):
+    def sawtooth(
+        self, *, typecode="PTS2", category="A1", turn_dps=8.0, period=90, amplitude=2000, seconds=720
+    ):
+        points = []
+        for i in range(seconds):
+            phase = (i % period) / period
+            alt = 3000 + amplitude * (phase * 2 if phase < 0.5 else 2 - phase * 2)
+            heading = (i * turn_dps) % 360
+            lat = 42.50 + 0.01 * math.sin(math.radians(heading))
+            lon = -83.40 + 0.01 * math.cos(math.radians(heading))
+            points.append(
+                {
+                    "ts": 1_700_000_000 + i,
+                    "lat": lat,
+                    "lon": lon,
+                    "alt_baro": alt,
+                    "gs": 120,
+                    "track": heading,
+                    "source": "adsb_icao",
+                }
+            )
+        aircraft = {"hex": "a1b2c3", "t": typecode, "category": category, "r": "N12AB"}
+        return points, aircraft
+
+    def test_aerobatic_type_with_large_reversals_fires(self):
+        points, aircraft = self.sawtooth()
+        kinds = {f.kind: f for f in maneuvers.trajectory(points, aircraft)}
+        self.assertIn("aerobatic_practice", kinds)
+        info = kinds["aerobatic_practice"].evidence["maneuver"]
+        self.assertGreaterEqual(info["reversals"], 5)
+        self.assertLessEqual(info["span_nm"], 5)
+        self.assertEqual(info["basis"], "type")
+
+    def test_light_category_needs_turn_rate(self):
+        points, aircraft = self.sawtooth(typecode="C172", turn_dps=2.0)
+        self.assertNotIn("aerobatic_practice", {f.kind for f in maneuvers.trajectory(points, aircraft)})
+        points, aircraft = self.sawtooth(typecode="C172", turn_dps=8.0)
+        found = {f.kind: f for f in maneuvers.trajectory(points, aircraft)}
+        self.assertEqual(found["aerobatic_practice"].evidence["maneuver"]["basis"], "turn_rate")
+
+    def test_small_reversals_do_not_count(self):
+        points, aircraft = self.sawtooth(amplitude=600)
+        self.assertNotIn("aerobatic_practice", {f.kind for f in maneuvers.trajectory(points, aircraft)})
+
+    def test_pinned_type_table_keeps_only_listed_designators(self):
+        listed = {"PTS2": {"designator": "PTS2"}}
+        with (
+            patch.object(maneuvers.reference, "GENERATION", -1),
+            patch.object(maneuvers.reference, "dataset", return_value={"types": {}}),
+            patch.object(maneuvers.reference, "type_info", side_effect=listed.get),
+        ):
+            self.assertEqual(maneuvers.aerobatic_types(), frozenset({"PTS2"}))
+        self.assertIn("E330", maneuvers.aerobatic_types())
+
+
 if __name__ == "__main__":
     unittest.main()

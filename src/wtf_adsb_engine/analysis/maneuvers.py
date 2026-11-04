@@ -13,7 +13,7 @@ from functools import lru_cache
 from itertools import pairwise, product
 from typing import NamedTuple
 
-from . import airport_context, kinds
+from . import airport_context, kinds, reference
 from .kinds import PRIORITY_STATUSES as PRIORITY_STATUSES
 from .kinds import STATUS_CODES as STATUS_CODES
 from .kinds import STATUS_MEANINGS as STATUS_MEANINGS
@@ -83,6 +83,8 @@ METRICS = {
     "derived_rate_fpm": ("Altitude-derived vertical rate", "ft/min"),
     "altitude_excursion_ft": ("Altitude excursion", "ft"),
     "reversals": ("Altitude reversals", "reversals"),
+    "span_nm": ("Track span", "NM"),
+    "max_turn_rate_dps": ("Highest turn rate held for 20 seconds", "deg/s"),
     "turn_degrees": ("Course reversal", "degrees"),
     "closed_loops": ("Closed loops", "loops"),
     "complete_passes": ("Parallel passes", "passes"),
@@ -138,6 +140,37 @@ SENSITIVE_CODES = re.compile(r"44[0-7][0-7]")
 OCTAL_CODE = re.compile(r"[0-7]{4}")
 SHORT_OCTAL_CODE = re.compile(r"[0-7]{1,4}")
 GLIDER_TYPES = {"GLID", "GLIM", "PISI"}
+# Aerobatic designators. With the pinned type table, only the codes it lists count.
+AEROBATIC_CANDIDATES = (
+    "E300",
+    "E330",
+    "PTS1",
+    "PTS2",
+    "PTSS",
+    "EDGE",
+    "SU26",
+    "SU29",
+    "SU31",
+    "YK52",
+    "YK55",
+    "CP10",
+    "CP21",
+    "CP23",
+    "MX2",
+    "G202",
+    "LASR",
+    "RV3",
+    "RV4",
+    "RV7",
+    "RV8",
+)
+AEROBATIC_WINDOW_SECONDS = 600
+AEROBATIC_STEP_FT = 800
+AEROBATIC_MIN_REVERSALS = 5
+AEROBATIC_MAX_SPAN_NM = 5.0
+AEROBATIC_MIN_EXCURSION_FT = 1500
+AEROBATIC_TURN_RATE_DPS = 6.0
+AEROBATIC_TURN_SECONDS = 20
 # Tanker designators. Airframes shared with transports (A330, 767, C-130J) count
 # only as a curated tanker variant by database description (KC-46A, KC-130J, MRTT).
 TANKER_TYPES = frozenset({"K35R", "K35E", "KC10", "KC46"})
@@ -1087,18 +1120,108 @@ def course_reversal(pos, legs=None):
     return found
 
 
-def _oscillations(heights):
+def _oscillations(heights, step=500):
     pivot, direction, reversals = heights[0], 0, 0
     for altitude in heights[1:]:
         delta = altitude - pivot
-        if direction == 0 and abs(delta) >= 500:
+        if direction == 0 and abs(delta) >= step:
             direction, pivot = (1 if delta > 0 else -1), altitude
         elif direction != 0 and direction * delta >= 0:
             pivot = altitude
-        elif abs(delta) >= 500:
+        elif abs(delta) >= step:
             reversals += 1
             direction, pivot = -direction, altitude
     return reversals
+
+
+_AEROBATIC_CACHE = {}
+
+
+def aerobatic_types():
+    """The aerobatic designators: those the pinned type table lists, or every candidate without it."""
+    generation = reference.GENERATION
+    if generation not in _AEROBATIC_CACHE:
+        if reference.dataset("aircraft-types") is None:
+            found = frozenset(AEROBATIC_CANDIDATES)
+        else:
+            found = frozenset(code for code in AEROBATIC_CANDIDATES if reference.type_info(code) is not None)
+        _AEROBATIC_CACHE.clear()
+        _AEROBATIC_CACHE[generation] = found
+    return _AEROBATIC_CACHE[generation]
+
+
+def _max_turn_rate(pos):
+    """The highest position-derived turn rate held for AEROBATIC_TURN_SECONDS, in deg/s.
+
+    A run is consecutive leg pairs each turning at least AEROBATIC_TURN_RATE_DPS
+    either way; its rate is the slowest pair in it.
+    """
+    best = 0.0
+    run_start, run_rate = None, 0.0
+    for a, b in pairwise(track_legs(pos, minimum=0.1)):
+        rate = abs(_turn_rate(a, b))
+        if rate >= AEROBATIC_TURN_RATE_DPS:
+            run_start = a["t0"] if run_start is None else run_start
+            run_rate = min(run_rate, rate) if run_rate else rate
+            if b["t1"] - run_start >= AEROBATIC_TURN_SECONDS:
+                best = max(best, run_rate)
+        else:
+            run_start, run_rate = None, 0.0
+    return round(best, 2)
+
+
+def aerobatic(pos, aircraft, coords=None):
+    """Repeated large altitude reversals in a small area by an aerobatic type or a hard-turning light aircraft.
+
+    The window is the last AEROBATIC_WINDOW_SECONDS of ``pos``; ``coords`` are
+    xy(pos), when the caller already has them.
+    """
+    cutoff = pos[-1]["ts"] - AEROBATIC_WINDOW_SECONDS
+    first = next(index for index, p in enumerate(pos) if p["ts"] >= cutoff)
+    window = pos[first:]
+    if len(window) < 10:
+        return None
+    ref, heights = altitude_series(window)
+    if not heights:
+        return None
+    reversals = _oscillations(heights, step=AEROBATIC_STEP_FT)
+    excursion = max(heights) - min(heights)
+    local = coords[first:] if coords else xy(window)
+    span = math.hypot(
+        max(x for x, _ in local) - min(x for x, _ in local),
+        max(y for _, y in local) - min(y for _, y in local),
+    )
+    if (
+        reversals < AEROBATIC_MIN_REVERSALS
+        or span > AEROBATIC_MAX_SPAN_NM
+        or excursion < AEROBATIC_MIN_EXCURSION_FT
+    ):
+        return None
+    turn = _max_turn_rate(window)
+    if reference.clean(aircraft.get("t")) in aerobatic_types():
+        basis = "type"
+    elif aircraft.get("category") == "A1" and turn >= AEROBATIC_TURN_RATE_DPS:
+        basis = "turn_rate"
+    else:
+        return None
+    finding = build(
+        "aerobatic_practice",
+        window,
+        "Repeated large altitude reversals in a small area",
+        reversals,
+        "reversals",
+        fields=("lat", "lon", ref),
+        reversals=reversals,
+        altitude_excursion_ft=round(excursion),
+        span_nm=round(span, 2),
+        max_turn_rate_dps=turn,
+        basis=basis,
+        altitude_reference=ref,
+        episode_start=window[0]["ts"],
+    )
+    if _terminal(window):
+        _tag(finding, "terminal_area_context")
+    return finding
 
 
 def _moved(side, ref, level):
@@ -1909,6 +2032,10 @@ def trajectory(points, aircraft, *, orbit=None, track=None, legs=None):
             if _terminal(pos):
                 _tag(finding, "terminal_area_context")
             findings.append(finding)
+    if match := aerobatic(pos, aircraft, coords):
+        info = match.evidence["maneuver"]
+        if not (circuit and _overlaps(info["started_at"], info["ended_at"], circuit)):
+            findings.append(match)
     if match := _hover(pos, aircraft):
         findings.append(match)
     # This runs for every fresh report, so the buffer's legs are measured, and
