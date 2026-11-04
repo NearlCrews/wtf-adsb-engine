@@ -80,17 +80,17 @@ and evidence contract versions are tracked separately.
 - An address in a military allocation range corroborates the identity on its
   own.
 - `identity_conflict` has a fixed score of 75 (was 78), the story bar, so it
-  fills a slot only when nothing else does, and `holding_stack` has a fixed
-  score of 78.
-- A finding that was never type-checked keeps its selection hold; only a
-  failed or outdated check goes stale 30 days after the first sighting.
+  stays story eligible and its low interest ranks it last, and `holding_stack`
+  has a fixed score of 78.
 - Live spotting readings below the applied threshold are no longer journaled.
   The hourly prune deletes such live rows, and live rated rows the wind worker
   settled as within the limit, once last seen more than 7 days ago. Archive and
   replay rows are kept.
-- A second-source type check still pending or failed 30 days after the first
-  sighting counts as unavailable, so it no longer holds selection; an
-  `unregistered_address` check never does. The export dates this by its own
+- A second-source type check that failed, or was made before the listing
+  changed, and is still unsettled 30 days after the first sighting counts as
+  unavailable, so it no longer holds selection; a finding that was never
+  checked keeps holding, and an `unregistered_address` check never goes
+  stale. The export dates this by its own
   export time. `typecheck.pending` asks about the highest scores first, then
   the newest first sightings.
 - `type_check.checked_at` is the time the registry answered, also when the

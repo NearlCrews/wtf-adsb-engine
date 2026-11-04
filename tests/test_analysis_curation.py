@@ -302,15 +302,16 @@ class StaleTypeChecks(unittest.TestCase):
             event["evidence"]["type_check"] = {"state": state, "source": "adsbdb", "checked_at": START}
         return event
 
-    def test_a_check_failed_for_thirty_days_stops_holding_and_counts_as_unavailable(self):
+    def test_a_check_unsettled_for_thirty_days_stops_holding_and_counts_as_unavailable(self):
         self.assertEqual(curation.STALE_CHECK_SECONDS, 30 * 86400)
         for kind in ("type_speed_mismatch", "first_type_here"):
-            with self.subTest(kind=kind):
-                fresh, stale = self.event(kind, "failed", 2), self.event(kind, "failed", 31)
-                self.assertEqual(curation.type_hold(fresh, now=self.NOW)[0], "type_check_pending")
-                self.assertIsNone(curation.type_hold(stale, now=self.NOW))
-                self.assertTrue(curation.stale_check(stale, now=self.NOW))
-                self.assertFalse(curation.stale_check(fresh, now=self.NOW))
+            for state in ("failed", "pending"):
+                with self.subTest(kind=kind, state=state):
+                    fresh, stale = self.event(kind, state, 2), self.event(kind, state, 31)
+                    self.assertEqual(curation.type_hold(fresh, now=self.NOW)[0], "type_check_pending")
+                    self.assertIsNone(curation.type_hold(stale, now=self.NOW))
+                    self.assertTrue(curation.stale_check(stale, now=self.NOW))
+                    self.assertFalse(curation.stale_check(fresh, now=self.NOW))
         # A stale check leaves a performance claim uncorroborated; a settled one is never stale.
         rules = [
             rule for rule, _ in curation.gates(self.event("type_speed_mismatch", "failed", 31), now=self.NOW)
@@ -325,6 +326,11 @@ class StaleTypeChecks(unittest.TestCase):
         for kind in ("type_speed_mismatch", "first_type_here"):
             with self.subTest(kind=kind):
                 event = self.event(kind, None, 31)
+                for block in (None, {}, "unavailable"):
+                    with self.subTest(block=block):
+                        event["evidence"]["type_check"] = block
+                        self.assertFalse(curation.stale_check(event, now=self.NOW))
+                del event["evidence"]["type_check"]
                 self.assertFalse(curation.stale_check(event, now=self.NOW))
                 self.assertEqual(curation.type_hold(event, now=self.NOW)[0], "type_check_pending")
                 self.assertNotIn("type_uncorroborated", dict(curation.gates(event, now=self.NOW)))

@@ -249,8 +249,10 @@ def stale_check(event, now=None):
     if event.get("kind") in typecheck.RECHECK_KINDS:
         return False
     evidence = event.get("evidence") if isinstance(event.get("evidence"), dict) else {}
-    if not evidence.get("type_check"):
-        # Never checked: the absence of a check says nothing, so the hold stays.
+    check = evidence.get("type_check")
+    if not isinstance(check, dict) or not check:
+        # Never checked (enrichment_rules.type_check_state reads this as pending): the absence
+        # of a check says nothing, so the hold stays.
         return False
     first = number(event.get("first_seen"))
     if first is None or enrichment_rules.type_check_state(evidence) not in {"pending", "failed"}:
@@ -263,7 +265,8 @@ def type_hold(event, *, now=None):
 
     A pending or failed second-source check holds selection until the worker's
     next answer, for at most STALE_CHECK_SECONDS after the finding's first
-    sighting (stale_check). The hold is not a review flag and never
+    sighting (stale_check); a finding with no check at all holds until the
+    worker asks about it. The hold is not a review flag and never
     unpublishes a released story: the publisher's next pass selects the finding
     once the check arrives. A disagreeing check, or no registry record for a
     performance kind, is a blocking gate instead (gates()).
