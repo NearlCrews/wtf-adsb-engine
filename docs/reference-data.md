@@ -6,7 +6,7 @@ an aircraft's mission, owner at that moment, or occupants.
 
 ## Bundled coverage
 
-Five files ship under `wtf_adsb_engine/analysis/data/`:
+Six files ship under `wtf_adsb_engine/analysis/data/`:
 
 | File | Coverage and limits |
 | --- | --- |
@@ -15,6 +15,16 @@ Five files ship under `wtf_adsb_engine/analysis/data/`:
 | `reference-beacon-codes-v1.json` | US beacon-code allocations with source editions and interpretation limits. Other jurisdictions can allocate codes differently. |
 | `reference-envelopes-v1.json` | Conservative project-curated plausibility thresholds, not certified aircraft operating limits. Individual threshold values are not cited. |
 | `reference-limits-v1.json` | Facts from named FAA and EASA type certificate data sheets. A missing type or limit remains unavailable. |
+| `airline_designators.json` | ICAO three-letter operator designators and operator names, from the Mictronics aircraft database under the ODC Attribution License 1.0, with project-curated selection and display names. It covers designators seen in this collection's callsigns from 2026-06-01 to 2026-10-05 and omits corporate flight departments, personal names, and state VIP flights. |
+
+`airline_designators.json` is shared with the publisher. Both repositories carry
+byte-identical copies, and `sync-state.json` records its SHA-256 under
+`shared_digests`, which the test suite checks. Change it in both repositories
+together, then run `tools/record_shared_digests.py` in each. The engine always
+reads its packaged copy, even when `WTF_ADSB_REFERENCE_DIR` is set.
+`reference.operator_name()` returns a listed designator's operator name, and
+the daily table and `first_operator_here` use it. The separate yes-or-no check
+`reference.operator_designator()` reads the identity bundle and is unchanged.
 
 The files retain source metadata and integrity hashes. Preserve them when
 redistributing permitted material. [Third-party notices](../THIRD_PARTY_NOTICES.md)

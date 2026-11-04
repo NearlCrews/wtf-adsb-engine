@@ -108,6 +108,128 @@ them universal requirements for other consumers. A normalized model with separat
 measurement records, explicit units and rule-level provenance remains a later
 profile. Consumers must not assume a normalized model is available.
 
+## Evidence blocks for newer kinds
+
+Six kinds joined the registry after 0.1.0: `winds_aloft_day`, `foreign_military`,
+`first_operator_here`, `aerobatic_practice`, `unregistered_address`, and
+`racetrack_orbit`. Their blocks sit inside a finding's evidence object, which the
+contract leaves open, so contract 1.1.0 carries them unchanged. The export
+allowlist in `analysis/export.py` drops any other field.
+
+### `winds_aloft`
+
+A `winds_aloft_day` finding describes a UTC day, not one aircraft. It counts the
+direct ADS-B reports from level jets at or above FL280 flying roughly east or
+west, and fires when 30 addresses each way show eastbound median ground speeds at
+least 150 kn above westbound ones. It is saved on the fastest eastbound address,
+and the kind is marked `subjectless`. Its maneuver block ends with `end_reason`
+`day_closed` after UTC midnight.
+
+| Field | Content |
+| --- | --- |
+| `day` | The UTC day, `YYYY-MM-DD` |
+| `east_addresses`, `west_addresses` | Addresses counted in each direction |
+| `east_median_kn`, `west_median_kn` | Median of the per-address median ground speeds in each direction |
+| `east_quartiles_kn`, `west_quartiles_kn` | The lower and upper quartiles of those speeds, as a two-item array |
+| `asymmetry_kn` | Eastbound median minus westbound median, rounded |
+| `altitude_floor_ft` | The altitude floor, 28,000 ft |
+| `evaluated_at` | Unix time of the evaluation that wrote the block |
+| `wind_250_hpa` | Optional cached Open-Meteo forecast: `speed_kn`, `direction_deg`, `source` (`open-meteo`), and `hour` (`YYYY-MM-DDTHH:00` UTC). The grid cell's coordinates are never included. |
+
+The finding's participants are up to 12 other eastbound addresses, fastest first.
+Each carries `measurements.median_gs_kn`, its median ground speed for the day.
+The wind itself is never measured; a forecast value is a model figure for one
+grid cell.
+
+### `foreign_military`
+
+A `foreign_military` finding names an address that the aircraft database flags
+as military, or that lies in a military allocation range, when the allocation
+block belongs to a State outside the United States group. A registration that
+disagrees with the allocation, or an identity conflict, withholds it.
+
+| Field | Content |
+| --- | --- |
+| `country` | The allocation State's code |
+| `country_name` | The allocation State's name |
+| `basis` | One or both of `dbFlags` and `military_allocation` |
+| `registration_country` | The country the registration implies, or null |
+
+### `unregistered`
+
+An `unregistered_address` finding marks a direct ADS-B report with a usable
+position whose address the aircraft database lists without a registration, or
+only with a placeholder, outside the military allocation ranges. It carries the
+`registry_gap` context tag. The kind is type-dependent and is not identity-led,
+so it never waits on identity corroboration. The type-check worker looks the
+address up again once its saved check is 7 days old, within 30 days of the first
+sighting; a failed recheck keeps the saved answer.
+
+| Field | Content |
+| --- | --- |
+| `callsign` | The broadcast callsign, or null |
+| `category` | The ADS-B emitter category, or null |
+| `source` | Always `adsb_icao` |
+
+### `first_sighting` with scope `operator`
+
+A `first_operator_here` finding uses the existing `first_sighting` block with
+`scope` set to `operator`. It fires when an airline-style callsign carries a
+designator that the operator table names, no earlier covered day in the retained
+records had it, and those records cover at least 30 days.
+
+| Field | Content |
+| --- | --- |
+| `scope` | `operator` |
+| `designator` | The three-letter ICAO designator from the callsign |
+| `operator` | The operator name from the shared designator table |
+| `coverage_days` | Earlier days with at least an hour of coverage |
+| `since` | The first day in the retained records, or null |
+
+### Aerobatic and racetrack metric keys
+
+These keys appear in the finding's `maneuver` block.
+
+`aerobatic_practice` needs at least five altitude reversals of 800 ft or more in
+the last ten minutes of a track, an excursion of at least 1,500 ft, and a span of
+at most 5 NM.
+
+| Key | Content |
+| --- | --- |
+| `reversals` | Altitude reversals of at least 800 ft |
+| `altitude_excursion_ft` | Highest minus lowest altitude in the window |
+| `span_nm` | Diagonal of the window's horizontal bounding box |
+| `max_turn_rate_dps` | Highest position-derived turn rate held for 20 s, in deg/s; absent when no turn was held that long |
+| `basis` | `type` for a listed aerobatic designator, `turn_rate` for a light aircraft that held a turn of at least 6 deg/s |
+
+`racetrack_orbit` needs at least four alternating legs, each at least 10 NM long
+and within 10 degrees of a common axis, over at least 40 minutes, with the two
+lines 2 to 15 NM apart.
+
+| Key | Content |
+| --- | --- |
+| `racetrack_legs` | Legs in the published run |
+| `leg_length_nm` | Mean leg length |
+| `axis_heading_deg` | Heading of the racetrack axis |
+| `lateral_spacing_nm` | Spacing between the two lines |
+| `line_repeat_nm` | Largest offset of a leg from its line, at most 1 NM |
+| `runway_within_nm` | Distance to the nearest mapped runway end, capped at 50 NM; also 50 outside the runway table's coverage |
+
+A racetrack can carry the `tanker_type`, `military_flag`, and `airport_context`
+tags. `airport_context` means the racetrack was centered within 10 NM of a mapped
+runway.
+
+### Other new evidence keys
+
+Rapid climb and descent findings record the rule that confirmed them:
+`threshold_fpm`, `qualifying_seconds_required`, and
+`qualifying_reports_required`. A descent starting at or above 10,000 ft needs
+6,000 ft/min for 60 s and 6 reports; other episodes need 4,500 ft/min for 30 s
+and 4 reports. A descent holding 7,000 ft/min for 30 s and 4 reports is confirmed
+as exceptional. The `season_record` block adds `margin_kn`, the amount by which
+the speed beat the previous maximum. A go-around carries
+`airport_maneuver_hypothesis` as a context tag.
+
 ## Identity, persistence and bounds
 
 The core commits accepted observations, revisions, change-log entries and the

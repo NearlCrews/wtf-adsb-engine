@@ -18,6 +18,7 @@ metadata, revisions, hashes, citations, and stated limitations when copying them
 | `reference-limits-v1.json` | Facts from cited FAA and EASA type certificate data sheets. Entries retain their source sheets and verification status. The source publications are not relicensed by this project. |
 | `reference-envelopes-v1.json` | Project-curated detection thresholds based on published performance figures. Its source notes describe the rounding and limitations; individual values are not cited. |
 | `airport-pattern-rule-v1.json` | Project rule configuration, covered by the project's MIT license. |
+| `airline_designators.json` | Operator designators and names from the [Mictronics aircraft database](https://github.com/Mictronics/aircraft-database), under the [ODC Attribution License 1.0](https://opendatacommons.org/licenses/by/1-0/). Its source manifest records the source revision and hash; the selection and display names are project-curated. |
 
 ## Optional sources
 

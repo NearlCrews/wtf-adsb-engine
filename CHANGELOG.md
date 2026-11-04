@@ -5,6 +5,30 @@ and evidence contract versions are tracked separately.
 
 ## Unreleased
 
+### Added
+
+- Six kinds: `winds_aloft_day`, `foreign_military`, `first_operator_here`,
+  `aerobatic_practice`, `unregistered_address`, and `racetrack_orbit`, with
+  their evidence blocks and export allowlist entries. The evidence format
+  document lists the new blocks and metric keys.
+- A `subjectless` kind property for stories with no aircraft subject. The
+  winds-aloft day is the first such kind.
+- The operator designator table `airline_designators.json`, shared with the
+  publisher byte for byte, and `reference.operator_name()`, which returns the
+  operator name for a listed three-letter ICAO designator.
+  `reference.operator_designator()` is unchanged.
+- A `designator` column in the `daily` table, added to existing journals on
+  start. The history backfill's cross-day phase is now `cross-day-v3` and
+  counts operator days.
+- A `day_speed_samples` journal table that keeps each address's directional
+  ground speeds for a UTC day, held for 3 days, and the `end_reason` value
+  `day_closed`.
+- The context tags `registry_gap`, `tanker_type`, `military_flag`, and
+  `airport_context`, with their notes.
+- Rapid climb and descent findings record `threshold_fpm`,
+  `qualifying_seconds_required`, and `qualifying_reports_required`, and
+  seasonal speed records record `margin_kn`.
+
 ### Fixed
 
 - Continuous collection no longer fails a poll with "database is locked" when
@@ -19,6 +43,39 @@ and evidence contract versions are tracked separately.
   from an unavailable one or a schema failure. URLs, absolute paths, keys,
   tokens, and host names are removed, and the message is cut to 200 characters.
   The JSON status line still names only the exception class.
+- A rapid descent that starts at or above 10,000 ft needs 6,000 ft/min or
+  faster for 60 s and 6 reports. Below 10,000 ft, and for climbs, the
+  4,500 ft/min rule with 30 s and 4 reports stays. A descent that holds
+  7,000 ft/min for 30 s and 4 reports is still confirmed as exceptional.
+- A seasonal speed record must beat the previous maximum by 10 kn or 3 percent,
+  whichever is larger, over a baseline of at least 30 days (was 14).
+- A first-of-type, watch-type, vintage, notable-variant, or foreign-military
+  finding is held with `reading_implausible` when the aircraft's own direct
+  ADS-B report gives a ground speed the listed type cannot fly, or any
+  pressure altitude is more than 2,000 ft above the type's ceiling. An MLAT or
+  TIS-B speed does not trigger it.
+- A call sign that differs from the registration only by formatting or one
+  trailing letter no longer counts as an identity conflict. Neither does a
+  registration that differs from the address's own N-number only by
+  formatting. One trailing letter there is still a conflict, since N8447 and
+  N8447L are different airframes.
+- An address in a military allocation range corroborates the identity on its
+  own.
+- `identity_conflict` has a fixed score of 70 (was 78), and `holding_stack`
+  has a fixed score of 78.
+- Live rated readings within their limit and live spotting readings below the
+  applied threshold are no longer journaled. The hourly prune deletes such live
+  rows, including rated rows later settled as within the limit, once last seen
+  more than 7 days ago. Archive and replay rows are kept.
+- A second-source type check still pending or failed 30 days after the first
+  sighting counts as unavailable, so it no longer holds selection. The export
+  dates this by its own export time. `typecheck.pending` asks about the highest
+  scores first, then the newest first sightings.
+- An open `unregistered_address` finding has its registry lookup repeated once
+  its saved check is a week old, within 30 days of the first sighting. A failed
+  recheck keeps the saved answer.
+- A possible go-around carries `airport_maneuver_hypothesis` as a context tag
+  instead of a blocking quality flag.
 
 ## 0.1.0 (2026-11-01)
 
