@@ -20,7 +20,7 @@ from .rules import (
     speed_plausible,
     type_envelope,
 )
-from .telemetry import DIRECT, source_for
+from .telemetry import direct_value
 
 VERSION = 11
 MAX_PER_DAY = 9
@@ -266,8 +266,7 @@ def _direct_speed(aircraft):
     A snapshot names its source in "type"; an MLAT or TIS-B solution listed for
     "gs" is a position-derived speed, never evidence against the listed type.
     """
-    kind = aircraft.get("type")
-    return kind in DIRECT and source_for({**aircraft, "source": kind}, "gs") in DIRECT
+    return direct_value(aircraft, "gs") is not None
 
 
 def _registry_gates(event, evidence):

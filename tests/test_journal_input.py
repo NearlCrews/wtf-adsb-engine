@@ -358,8 +358,6 @@ class JournalNoise(unittest.TestCase):
             def finding(kind, value, unit, evidence):
                 return rules.Finding(kind, "performance", "t", value, unit, "w", "e", 70, evidence=evidence)
 
-            within = finding("above_rated_speed", 520, "kn", {"rated_limit": {"verdict": "within"}})
-            self.assertIsNone(app.record(db, a, within, 0, 60))
             self.assertIsNone(app.record(db, a, finding("fast", 520, "kn", {}), 0, 60))
             self.assertIsNone(app.record(db, a, finding("high", 41000, "ft", {}), 0, 60))
             self.assertEqual(db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 0)
@@ -373,7 +371,7 @@ class JournalNoise(unittest.TestCase):
             self.assertIsNotNone(app.record(db, a, finding("high", 41000, "ft", local), 0, 60))
             # Archive imports keep every reading.
             archive = sorted(app.ARCHIVE_ORIGINS)[0]
-            self.assertIsNotNone(app.record(db, a, within, 0, 60, origin=archive))
+            self.assertIsNotNone(app.record(db, a, finding("fast", 520, "kn", {}), 0, 60, origin=archive))
             self.assertEqual(db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 4)
 
     def test_prune_removes_settled_within_rows_after_a_week(self):
@@ -433,9 +431,29 @@ class JournalNoise(unittest.TestCase):
                 "UPDATE events SET value=480,evidence=json_set(evidence,'$.aircraft.gs',480) WHERE id=?",
                 (old_fast,),
             )
+            # A high row at or above the default threshold, and one below it with a broken profile.
+            high = {"hex": "a00006", "type": "adsb_icao", "r": "N6", "t": "A320", "alt_baro": 49500}
+            old_high = app.record(
+                db,
+                high,
+                rules.Finding("high", "performance", "t", 49500, "ft", "w", "e", 70, evidence={}),
+                now - 8 * day - 60,
+                now - 8 * day,
+            )
+            low_high = app.record(
+                db,
+                {**high, "hex": "a00007"},
+                rules.Finding("high", "performance", "t", 49500, "ft", "w", "e", 70, evidence={}),
+                now - 8 * day - 60,
+                now - 8 * day,
+            )
+            db.execute(
+                "UPDATE events SET value=45000,evidence=json_set(evidence,'$.performance_profile',json('{}')) WHERE id=?",
+                (low_high,),
+            )
             app.Detector(path)._prune(db, now)
             kept = {row[0] for row in db.execute("SELECT id FROM events")}
-            self.assertEqual(kept, {recent_within, old_exceeded, archive_within})
+            self.assertEqual(kept, {recent_within, old_exceeded, archive_within, old_high})
             reviews = {row[0] for row in db.execute("SELECT event_id FROM event_reviews")}
             self.assertNotIn(old_within, reviews)
             self.assertEqual(app.NOISE_RETENTION, 7 * day)

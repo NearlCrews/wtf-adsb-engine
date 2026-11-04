@@ -119,6 +119,7 @@ class IndexedNorms(unittest.TestCase):
 
     def test_the_indexed_norm_equals_the_unindexed_one(self):
         db = sqlite3.connect(":memory:")
+        self.addCleanup(db.close)
         selection.initialize(db)
         base = 1_760_000_000
         addresses = [f"a{n:05x}" for n in range(60)]

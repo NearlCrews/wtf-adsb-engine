@@ -175,6 +175,19 @@ def source_for(point, field):
     return source if isinstance(source, str) else "unknown"
 
 
+def report_sources(report):
+    """The provenance fields source_for reads, for a sanitized report or saved aircraft
+    (its own source is in "type")."""
+    return {"source": report.get("type", "unknown"), "mlat": report.get("mlat"), "tisb": report.get("tisb")}
+
+
+def direct_value(report, field, sources=None):
+    """The field's value when the aircraft's own ADS-B transmission supplied it, else None."""
+    value = number(report.get(field))
+    direct = source_for(sources or report_sources(report), field) in DIRECT
+    return value if value is not None and direct else None
+
+
 def low_position_quality(point):
     """A reported navigation integrity or accuracy category of 1 or less."""
     return any(number(point.get(key)) is not None and number(point[key]) <= 1 for key in ("nic", "nac_p"))

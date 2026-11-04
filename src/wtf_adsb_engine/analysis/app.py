@@ -152,6 +152,10 @@ FORMATION_NEAR_NM = 4
 FORMATION_NEAR_FT = 3000
 # An address silent this long has its open episodes ended once ("stale").
 STALE_SECONDS = maneuvers.STATUS_GAP
+# An open episode with maneuver.closes_at ends once that time passes; the sweep looks
+# this far back for one, as long as the winds-aloft samples are kept.
+CLOSES_AT = "json_extract(evidence,'$.maneuver.closes_at')"
+CLOSE_LOOKBACK = winds.RETENTION
 ANOMALY_RETENTION = 7 * 86400
 # When the season_speeds table began, the earliest report a season record compares.
 SEASON_SINCE = "season_speeds_since"
@@ -276,7 +280,7 @@ def initialize(path=DATABASE):
         flightaware.initialize(db)
         typecheck.initialize(db)
         wind.initialize(db)
-        db.executescript(winds.DDL)
+        winds.initialize(db)
 
 
 def _without_receiver_fields(value):
@@ -382,26 +386,14 @@ def stored(a):
     return {key: value for key, value in a.items() if key not in RECEIVER_FIELDS}
 
 
-def _sources(a):
-    """The provenance fields telemetry.source_for reads, for a sanitized report."""
-    return {"source": a.get("type", "unknown"), "mlat": a.get("mlat"), "tisb": a.get("tisb")}
-
-
-def _direct(a, field, sources=None):
-    """The field's value when the aircraft's own ADS-B transmission supplied it."""
-    value = number(a.get(field))
-    direct = telemetry.source_for(sources or _sources(a), field) in telemetry.DIRECT
-    return value if value is not None and direct else None
-
-
 def remember(db, a, first, last, observations=1, *, performance=True, band=0):
     """Save the latest report. Records come only from direct reports, and an
     identity conflict (``performance=False``) adds nothing to them. ``band`` is
     the report's range band (rules.range_band); the exact range is never saved."""
     address = a["hex"]
-    sources = _sources(a)
-    gs = _direct(a, "gs", sources) if performance else None
-    altitude = _direct(a, "alt_baro", sources) if performance else None
+    sources = telemetry.report_sources(a)
+    gs = telemetry.direct_value(a, "gs", sources) if performance else None
+    altitude = telemetry.direct_value(a, "alt_baro", sources) if performance else None
     # Values beyond the outlier bounds are reported as outliers, never as records.
     gs = gs if gs is not None and gs <= MAX_PLAUSIBLE_GS_KT else None
     altitude = altitude if altitude is not None and altitude <= rules.altitude_bound(a) else None
@@ -569,15 +561,16 @@ def _implausible_speed(db, address, session, previous):
     )
 
 
-# Live readings the journal keeps out (_noise): no story or review ever uses them.
-NOISE_KINDS = frozenset({"above_rated_speed", "above_rated_altitude", "fast", "high"})
-# Saved live rows that became noise (a rated verdict the wind worker settled as
-# "within") are pruned once last seen this long ago (Detector._prune_noise).
+# Live spotting readings the journal keeps out (_noise): no story or review ever uses them.
+# A rated reading's verdict is still pending when it is recorded; the wind worker may
+# settle it as "within" later (Detector._prune_noise).
+NOISE_KINDS = frozenset({"fast", "high"})
+# Saved live rows that are noise are pruned once last seen this long ago.
 NOISE_RETENTION = 7 * 86400
 
 
 def _noise(a, finding):
-    """A finding the journal keeps out: a within-limit rated reading, or a spotting reading below its threshold.
+    """A spotting finding the journal keeps out: a reading below its threshold.
 
     The threshold is the one the detector applied (the finding's performance_profile),
     else rules.performance_thresholds() for the report.
@@ -585,9 +578,6 @@ def _noise(a, finding):
     if finding.kind not in NOISE_KINDS:
         return False
     evidence = finding.evidence if isinstance(finding.evidence, dict) else {}
-    if finding.kind.startswith("above_rated_"):
-        rated = evidence.get("rated_limit")
-        return isinstance(rated, dict) and rated.get("verdict") == "within"
     speed, altitude = rules.performance_thresholds(a)
     profile = evidence.get("performance_profile")
     if isinstance(profile, dict):
@@ -988,6 +978,9 @@ class Detector:
         self.segment_caches = defaultdict(lambda: rules.IdentityCache(rules.segment_point))
         self.season_since = None
         self.next_multi = 0
+        # The UTC day's winds-aloft carrier ({day, hex, a, extra}), and the newest kept
+        # directional speed per (address, direction) (winds.remember).
+        self.winds_day, self.winds_samples = None, {}
 
     def _forget_aircraft(self, address):
         """Drop one aircraft's in-memory state after its report failed and its writes were undone."""
@@ -1127,20 +1120,26 @@ class Detector:
                 )
                 # Private diagnostics; the tags carry no position or receiver value.
                 db.execute("DELETE FROM anomaly_observations WHERE ts<?", (now - ANOMALY_RETENTION,))
-                # An episode not found again while its window was in the buffer has ended.
-                # A winds-aloft day ends with its UTC day instead (_winds_aloft).
+                # An episode not found again while its window was in the buffer has ended
+                # ("stale"). One with a closing time (a winds-aloft day) ends once that time
+                # has passed instead ("day_closed"), even across a restart.
                 db.execute(
-                    """UPDATE events SET evidence=json_set(evidence,'$.maneuver.state','ended',
-                      '$.maneuver.end_reason','stale','$.maneuver.evaluated_at',MAX(last_seen+?,
+                    f"""UPDATE events SET evidence=json_set(evidence,'$.maneuver.state','ended',
+                      '$.maneuver.end_reason',CASE WHEN {CLOSES_AT} IS NULL THEN 'stale' ELSE 'day_closed' END,
+                      '$.maneuver.evaluated_at',MAX(CASE WHEN {CLOSES_AT} IS NULL THEN last_seen+? ELSE ? END,
                       COALESCE(json_extract(evidence,'$.maneuver.evaluated_at'),0)))
-                    WHERE last_seen<? AND last_seen>=? AND origin=? AND kind!=?
-                      AND json_extract(evidence,'$.maneuver.state')='active'""",
+                    WHERE last_seen>=? AND origin=? AND json_valid(evidence)
+                      AND json_extract(evidence,'$.maneuver.state')='active'
+                      AND CASE WHEN {CLOSES_AT} IS NULL THEN last_seen<? AND last_seen>=?
+                        ELSE {CLOSES_AT}<=? END""",
                     (
                         STALE_SECONDS,
+                        now,
+                        now - CLOSE_LOOKBACK,
+                        LIVE_ORIGIN,
                         now - TRACK_SECONDS - STALE_SECONDS,
                         now - TRACK_SECONDS - 3600,
-                        LIVE_ORIGIN,
-                        winds.KIND,
+                        now,
                     ),
                 )
                 self.telemetry = defaultdict(
@@ -1292,7 +1291,7 @@ class Detector:
         distance = number(raw.get("r_dst"))
         band = range_band(distance) if distance is not None and distance <= RANGE_BOUND_NM else 0
         remember(db, a, stamp, stamp, performance=not conflict, band=band)
-        winds.remember(db, a, stamp)
+        winds.remember(db, a, stamp, self.winds_samples)
         findings = candidates(a, now, self.rarity, self.profiles, identity=checks, band=band)
         findings += rules.supplementary_candidates(a, now, identity=checks)
         findings += self._guarded(
@@ -2280,8 +2279,7 @@ class Detector:
             self.multi[key] = {"finding": finding, "a": previous["a"], "extra": extra, "seen": now}
             self._confirm(db, previous["a"], finding, now, extra)
         for key, entry in list(self.multi.items()):
-            # A winds-aloft day ends with its UTC day (_winds_aloft), not after a gap.
-            if key in current or key[0] == winds.KIND or now - entry["seen"] < 2 * MULTI_INTERVAL:
+            if key in current or now - entry["seen"] < 2 * MULTI_INTERVAL:
                 continue
             finding = copy.deepcopy(entry["finding"])
             info = finding.evidence["maneuver"]
@@ -2298,70 +2296,39 @@ class Detector:
         """The UTC day's winds-aloft finding, evaluated every winds.INTERVAL.
 
         The kind has no subject aircraft. Its row is saved on one eastbound aircraft
-        seen that day, and later evaluations keep that aircraft (the open entry, else
-        the day's saved row, which also survives a restart) so the day stays one row.
-        The row stays open through the day and ends once, with end_reason
-        "day_closed", after UTC midnight.
+        seen that day, and later evaluations keep that aircraft (the day's entry in
+        winds_day, else the day's saved row, which also survives a restart) so the day
+        stays one row. The row keeps the day's last passing evaluation, and the stale
+        sweep in process() ends it once, with end_reason "day_closed", when its
+        maneuver.closes_at (the next UTC midnight) has passed.
         """
         today = curation.utc_day(now)
-        carrier = None
-        for key, entry in list(self.multi.items()):
-            if key[0] != winds.KIND:
-                continue
-            if entry["finding"].evidence["winds_aloft"]["day"] == today:
-                carrier = key[1]
-                continue
-            finding = copy.deepcopy(entry["finding"])
-            info = finding.evidence["maneuver"]
-            if info.get("state") == "active":
-                info.update(
-                    state="ended", end_reason="day_closed", evaluated_at=max(info["evaluated_at"], now)
-                )
-                self._confirm(db, entry["a"], finding, now, entry["extra"])
-            del self.multi[key]
+        self.winds_samples = {
+            key: stamp for key, stamp in self.winds_samples.items() if now - stamp < winds.SAMPLE_SECONDS
+        }
+        if self.winds_day is not None and self.winds_day["day"] != today:
+            self.winds_day = None
         if now - self.winds_at < winds.INTERVAL:
             return
         self.winds_at = now
-        # A row of an earlier day left open, for example across a restart, ends here.
-        db.execute(
-            """UPDATE events SET evidence=json_set(evidence,'$.maneuver.state','ended',
-              '$.maneuver.end_reason','day_closed','$.maneuver.evaluated_at',
-              MAX(?,COALESCE(json_extract(evidence,'$.maneuver.evaluated_at'),0)))
-            WHERE kind=? AND origin=? AND json_valid(evidence)
-              AND json_extract(evidence,'$.maneuver.state')='active'
-              AND json_extract(evidence,'$.winds_aloft.day')<?""",
-            (now, winds.KIND, LIVE_ORIGIN, today),
-        )
-        saved = {}
-
-        def choose(addresses):
-            # The day's carrier: the open entry's aircraft, else the saved row's, else the
-            # fastest eastbound aircraft with a report in memory.
-            if carrier is not None and carrier in addresses:
-                return carrier
+        held, saved = self.winds_day, None
+        if held is None:
             row = db.execute(
                 """SELECT hex,evidence FROM events WHERE last_seen>=? AND kind=? AND origin=?
                 AND json_valid(evidence) AND json_extract(evidence,'$.winds_aloft.day')=? ORDER BY id LIMIT 1""",
                 (now - now % 86400, winds.KIND, LIVE_ORIGIN, today),
             ).fetchone()
-            if row is not None and row["hex"] in addresses:
-                saved["evidence"] = json.loads(row["evidence"])
-                return row["hex"]
-            chosen = next((address for address in addresses if address in self.previous), None)
-            if chosen is None:
-                LOG.debug("Winds aloft: no eastbound aircraft of the day is in memory; evaluation skipped")
-            return chosen
-
-        evaluated = winds.evaluate(
-            db, now, wind_lookup=lambda day, hour: winds.cached_wind(db, day, hour, now), choose=choose
-        )
+            saved = None if row is None else {"hex": row["hex"], "evidence": json.loads(row["evidence"])}
+        prefer = held["hex"] if held is not None else saved["hex"] if saved is not None else None
+        # Without the day's carrier, the fastest eastbound aircraft with a report in memory.
+        evaluated = winds.evaluate(db, now, prefer=prefer, present=self.previous)
         if evaluated is None:
             return
         primary, finding, members = evaluated
-        previous, held = self.previous.get(primary), self.multi.get((winds.KIND, primary))
+        previous = self.previous.get(primary)
         if previous is not None:
             a, extra = previous["a"], _extra(previous["session"], previous["checks"])
-        elif held is not None:
+        elif held is not None and held["hex"] == primary:
             a, extra = held["a"], held["extra"]
         else:
             # The saved row's aircraft is out of memory: its saved identity carries on.
@@ -2379,7 +2346,7 @@ class Detector:
             )
             for member in members
         ]
-        self.multi[(winds.KIND, primary)] = {"finding": finding, "a": a, "extra": extra, "seen": now}
+        self.winds_day = {"day": today, "hex": primary, "a": a, "extra": extra}
         self._confirm(db, a, finding, now, extra)
 
     def _stale(self, db, now, status):
@@ -2609,42 +2576,34 @@ class Detector:
 
     @staticmethod
     def _prune_noise(db, now):
-        """Delete live NOISE_KINDS rows that _noise() refuses, last seen NOISE_RETENTION ago.
+        """Delete live noise rows last seen NOISE_RETENTION ago; returns how many.
 
-        A rated row the wind worker settled as "within" is the usual one. The engine
-        journal keeps no export cursor, so age alone decides; _prune then removes the
-        dependent review and retry rows.
+        Noise is a rated row the wind worker settled as "within", or a fast or high
+        row below its applied threshold (the performance_profile's, else the
+        default; _noise). The engine journal keeps no export cursor, so age alone
+        decides; _prune then removes the dependent review and retry rows.
         """
-        names = sorted(NOISE_KINDS)
-        rows = db.execute(
-            f"""SELECT id,kind,category,title,value,unit,score,evidence FROM events
-            WHERE origin=? AND last_seen<? AND kind IN ({",".join("?" * len(names))})""",
-            (LIVE_ORIGIN, now - NOISE_RETENTION, *names),
-        ).fetchall()
-        noise = []
-        for row in rows:
-            try:
-                evidence = json.loads(row["evidence"])
-            except TypeError, ValueError:
-                continue
-            if not isinstance(evidence, dict):
-                continue
-            aircraft = evidence.get("aircraft") if isinstance(evidence.get("aircraft"), dict) else {}
-            finding = Finding(
-                row["kind"],
-                row["category"],
-                row["title"],
-                row["value"],
-                row["unit"] or "",
-                "",
-                "",
-                row["score"],
-                evidence=evidence,
-            )
-            if _noise(aircraft, finding):
-                noise.append((row["id"],))
-        db.executemany("DELETE FROM events WHERE id=?", noise)
-        return len(noise)
+
+        def field(path):
+            return f"CASE WHEN json_valid(evidence) THEN json_extract(evidence,'{path}') END"
+
+        rated = sorted(rules.RATED_KINDS)
+        cursor = db.execute(
+            f"""DELETE FROM events WHERE origin=? AND last_seen<? AND (
+              (kind IN ({",".join("?" * len(rated))}) AND {field("$.rated_limit.verdict")}='within')
+              OR (kind='fast' AND (value IS NULL OR value<COALESCE(
+                NULLIF({field("$.performance_profile.ground_speed_threshold_kn")},0),?)))
+              OR (kind='high' AND (value IS NULL OR value<COALESCE(
+                NULLIF({field("$.performance_profile.altitude_threshold_ft")},0),?))))""",
+            (
+                LIVE_ORIGIN,
+                now - NOISE_RETENTION,
+                *rated,
+                rules.DEFAULT_SPEED_THRESHOLD,
+                rules.DEFAULT_ALTITUDE_THRESHOLD,
+            ),
+        )
+        return cursor.rowcount
 
 
 # Every numeric, envelope or rated kind that selection confirms has a measured field.

@@ -120,10 +120,13 @@ allowlist in `analysis/export.py` drops any other field.
 
 A `winds_aloft_day` finding describes a UTC day, not one aircraft. It counts the
 direct ADS-B reports from level jets at or above FL280 flying roughly east or
-west, and fires when 30 addresses each way show eastbound median ground speeds at
-least 150 kn above westbound ones. It is saved on the fastest eastbound address,
-and the kind is marked `subjectless`. Its maneuver block ends with `end_reason`
-`day_closed` after UTC midnight.
+west, at most one a minute for each address and direction, and fires when 30
+addresses each way show eastbound median ground speeds at least 150 kn above
+westbound ones. It is saved on the fastest eastbound address with a recent
+report, later evaluations that day keep that address, and the kind is marked
+`subjectless`. The block keeps the day's last passing evaluation, also when the
+asymmetry later drops below the threshold. Its maneuver block ends with
+`end_reason` `day_closed` after UTC midnight.
 
 | Field | Content |
 | --- | --- |
@@ -134,7 +137,7 @@ and the kind is marked `subjectless`. Its maneuver block ends with `end_reason`
 | `asymmetry_kn` | Eastbound median minus westbound median, rounded |
 | `altitude_floor_ft` | The altitude floor, 28,000 ft |
 | `evaluated_at` | Unix time of the evaluation that wrote the block |
-| `wind_250_hpa` | Optional cached Open-Meteo forecast: `speed_kn`, `direction_deg`, `source` (`open-meteo`), and `hour` (`YYYY-MM-DDTHH:00` UTC). The grid cell's coordinates are never included. |
+| `wind_250_hpa` | Optional cached Open-Meteo forecast for the hour nearest the evaluation: `speed_kn`, `direction_deg`, `source` (`open-meteo`), and `hour` (`YYYY-MM-DDTHH:00` UTC). The grid cell's coordinates are never included. |
 
 The finding's participants are up to 12 other eastbound addresses, fastest first.
 Each carries `measurements.median_gs_kn`, its median ground speed for the day.
