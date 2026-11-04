@@ -77,15 +77,28 @@ def main():
     with tempfile.TemporaryDirectory(prefix="wtf-engine-wheel-") as temporary:
         work = Path(temporary)
         environment = {key: value for key, value in os.environ.items() if not key.startswith("WTF_ADSB_")}
+        # The locked dependencies come from uv's cache, which a fresh checkout fills
+        # with `uv sync`; an offline index lookup would not. The wheel itself then
+        # installs without dependency resolution, which proves it needs nothing else.
         subprocess.run(
-            ["uv", "venv", "--python", sys.executable, str(work / "venv")],
+            [
+                "uv",
+                "sync",
+                "--locked",
+                "--offline",
+                "--no-dev",
+                "--no-install-project",
+                "--python",
+                sys.executable,
+            ],
             check=True,
-            env=environment,
+            env={**environment, "UV_PROJECT_ENVIRONMENT": str(work / "venv")},
             capture_output=True,
+            cwd=ROOT,
         )
         python = work / "venv/bin/python"
         subprocess.run(
-            ["uv", "pip", "install", "--offline", "--python", str(python), str(wheels[0])],
+            ["uv", "pip", "install", "--offline", "--no-deps", "--python", str(python), str(wheels[0])],
             check=True,
             env=environment,
             capture_output=True,

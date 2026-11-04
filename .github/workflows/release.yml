@@ -24,7 +24,9 @@ jobs:
         with:
           version: "0.12.24"
           enable-cache: false
-      - run: uv python install
+      # uv's download index skips some patch releases, so the runner takes any 3.14.
+      - run: uv python install 3.14
+      - run: echo "UV_PYTHON=3.14" >> "$GITHUB_ENV"
       - run: uv sync --locked --extra dev --extra archive
       - name: Check the tag and write the release notes
         run: |
@@ -54,7 +56,7 @@ jobs:
           for name in build.json packages.json; do
             docker cp "$container:/usr/local/share/wtf-adsb-engine/$name" "$RUNNER_TEMP/release/$name"
           done
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
