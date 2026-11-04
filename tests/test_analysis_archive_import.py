@@ -333,5 +333,57 @@ class PatternApplyOverlapTests(unittest.TestCase):
             )
 
 
+class CrossDayOperatorTests(unittest.TestCase):
+    """The cross-day phase counts operator designators as the collector's daily table does."""
+
+    COVERAGE = [f"2026-09-{day:02d}" for day in range(1, 31)] + ["2026-10-01"]
+
+    @staticmethod
+    def row(address, day, flight, at, designator=None):
+        fix = {"ts": at, "lat": 42.5, "lon": -83.4, "source": "adsb_icao", "flight": flight, "label_at": at}
+        record = {"positions": 3, "first": at, "last": at + 10, "first_fix": fix}
+        record["sighted"] = {"fix": fix, "at": at + 10, "positions": 3}
+        if designator:
+            record["designator"] = designator
+        return address, day, json.dumps({"traces": record})
+
+    def kinds(self, phase):
+        return [event["kind"] for event in phase.events]
+
+    def test_a_days_designator_is_its_first_airline_callsign(self):
+        points = [
+            {"ts": 1},
+            {"ts": 2, "flight": "N123DL"},
+            {"ts": 3, "flight": "DAL1234"},
+            {"ts": 4, "flight": "UAL9"},
+        ]
+        self.assertEqual(backfill._designator(points), "DAL")
+        self.assertEqual(backfill._designator([{"ts": 1, "flight": "ZZQ12"}]), "")
+
+    def test_first_operator_day_then_never_again(self):
+        phase = backfill._CrossDay(self.COVERAGE, {}, "2026-10-03T00:00:00Z")
+        phase.day("2026-10-02", [self.row("a05f2d", "2026-10-02", "DAL1234", 1_790_901_000, "DAL")])
+        self.assertIn("first_operator_here", self.kinds(phase))
+        phase.events.clear()
+        phase.day("2026-10-03", [self.row("a05f2e", "2026-10-03", "DAL88", 1_790_987_400, "DAL")])
+        self.assertNotIn("first_operator_here", self.kinds(phase))
+
+    def test_only_the_days_earliest_aircraft_is_first_and_a_day_without_coverage_is_not(self):
+        phase = backfill._CrossDay(self.COVERAGE, {}, "2026-10-03T00:00:00Z")
+        phase.day(
+            "2026-10-02",
+            [
+                self.row("a05f2d", "2026-10-02", "SWA10", 1_790_901_600, "SWA"),
+                self.row("a05f2e", "2026-10-02", "SWA20", 1_790_901_000, "SWA"),
+            ],
+        )
+        self.assertEqual(
+            [event["hex"] for event in phase.events if event["kind"] == "first_operator_here"], ["a05f2e"]
+        )
+        early = backfill._CrossDay(self.COVERAGE[:5], {}, "2026-10-03T00:00:00Z")
+        early.day("2026-10-02", [self.row("a05f2d", "2026-10-02", "JBU1", 1_790_901_000, "JBU")])
+        self.assertNotIn("first_operator_here", self.kinds(early))
+
+
 if __name__ == "__main__":
     unittest.main()

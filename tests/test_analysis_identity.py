@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from test_analysis_export import sample_source
 
+from wtf_adsb_engine.analysis import reference, rules
 from wtf_adsb_engine.analysis.identity import IdentityStore
 
 
@@ -95,3 +96,65 @@ class IdentityLifecycleTests(unittest.TestCase):
                     with identities:
                         self.fail("Entry should fail before the body runs")
                 self.assert_closed_and_unlocked(identities.db, path)
+
+
+class FirstOperatorHere(unittest.TestCase):
+    # a05f2d is the address the US algorithm assigns to N123DL, so the identity checks agree.
+    AIRCRAFT = {
+        "hex": "a05f2d",
+        "type": "adsb_icao",
+        "r": "N123DL",
+        "t": "A321",
+        "flight": "DAL1234",
+        "category": "A3",
+        "lat": 42.5,
+        "lon": -83.4,
+    }
+
+    def history(self, **over):
+        base = {
+            "coverage_days": 45,
+            "first_day": "2026-09-01",
+            "type_days": 12,
+            "other_type_days": 0,
+            "country_days": 40,
+            "operator_days": 0,
+        }
+        return {**base, **over}
+
+    def kinds_of(self, aircraft, history):
+        return [f.kind for f in rules.first_sighting(aircraft, history)]
+
+    def test_first_operator_fires_with_a_known_designator_and_no_prior_days(self):
+        findings = rules.first_sighting(self.AIRCRAFT, self.history())
+        found = next(f for f in findings if f.kind == "first_operator_here")
+        self.assertEqual(found.evidence["first_sighting"]["scope"], "operator")
+        self.assertEqual(found.evidence["first_sighting"]["designator"], "DAL")
+        self.assertEqual(found.evidence["first_sighting"]["operator"], "Delta Air Lines")
+        self.assertEqual(found.score, 76)
+
+    def test_no_finding_without_coverage_or_with_prior_days(self):
+        self.assertNotIn("first_operator_here", self.kinds_of(self.AIRCRAFT, self.history(coverage_days=29)))
+        self.assertNotIn("first_operator_here", self.kinds_of(self.AIRCRAFT, self.history(operator_days=1)))
+        self.assertNotIn(
+            "first_operator_here", self.kinds_of(self.AIRCRAFT, self.history(operator_days=None))
+        )
+
+    def test_no_finding_for_unknown_designator_n_number_or_light_type(self):
+        self.assertNotIn(
+            "first_operator_here", self.kinds_of({**self.AIRCRAFT, "flight": "ZZQ12"}, self.history())
+        )
+        self.assertNotIn(
+            "first_operator_here", self.kinds_of({**self.AIRCRAFT, "flight": "N123DL"}, self.history())
+        )
+        light = {**self.AIRCRAFT, "t": "C172"}
+        self.assertIn("first_operator_here", self.kinds_of(light, self.history()))
+        # The packaged tests carry no type or identity tables, so a piston type and a known
+        # designator stand in for them; a fresh generation keeps the memoized checks apart.
+        with (
+            patch.object(reference, "GENERATION", -1),
+            patch.object(reference, "type_info", return_value={"engine_type": "P"}),
+            patch.object(reference, "operator_designator", return_value=True),
+        ):
+            self.assertIs(rules.identity_checks(light)["airline_callsign_on_light_type"], True)
+            self.assertNotIn("first_operator_here", self.kinds_of(light, self.history()))

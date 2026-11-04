@@ -3,13 +3,14 @@
 import sqlite3
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from test_analysis_export import NOW, report
 
 from wtf_adsb_engine import wire
-from wtf_adsb_engine.analysis import app
+from wtf_adsb_engine.analysis import app, rules
 from wtf_adsb_engine.analysis.native import NativeCollector
 from wtf_adsb_engine.builtins.io import JournalInput
 from wtf_adsb_engine.plugin_api.v1 import Context
@@ -164,6 +165,97 @@ class DailyDesignator(unittest.TestCase):
             report["flight"] = "N123DL"
             app.remember(db, {**report, "hex": "a9067c"}, 1_700_000_000.0, 1_700_000_010.0)
             self.assertEqual(db.execute("SELECT designator FROM daily WHERE hex='a9067c'").fetchone()[0], "")
+
+
+class FirstOperatorBaseline(unittest.TestCase):
+    TODAY = "2026-10-02"
+    # 2026-10-02 00:30 UTC.
+    STAMP = 1_790_901_000.0
+    AIRCRAFT = {
+        "hex": "a05f2d",
+        "type": "adsb_icao",
+        "r": "N123DL",
+        "t": "A321",
+        "flight": "DAL1234",
+        "lat": 42.5,
+        "lon": -83.4,
+    }
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / "journal.sqlite3"
+        app.initialize(path)
+        self.path = path
+        self.db = app.connect(path)
+        self.addCleanup(self.db.close)
+        # 31 covered days, 2026-09-01 through 2026-10-01.
+        for offset in range(31):
+            day = (date(2026, 9, 1) + timedelta(days=offset)).isoformat()
+            self.db.execute("INSERT INTO coverage VALUES (?,3600,1)", (day,))
+        self.daily("2026-09-10", "a1b2c3", "A321", "DAL")
+        # Neither a ~ track identifier nor a row without a designator counts.
+        self.daily("2026-09-11", "~a00001", "A320", "UAL")
+        self.daily("2026-09-12", "a1b2c4", "C172", "")
+
+    def daily(self, day, address, typecode, designator):
+        self.db.execute("INSERT INTO daily VALUES (?,?,?,?)", (day, address, typecode, designator))
+
+    def test_full_and_incremental_reads_count_designator_days(self):
+        full = app.Detector._first_history(self.db, self.TODAY)
+        self.assertEqual(full["coverage_days"], 31)
+        self.assertEqual(full["operators"], {"DAL": 1})
+        yesterday = app.Detector._first_history(self.db, "2026-10-01")
+        self.assertEqual(yesterday["operators"], {"DAL": 1})
+        self.daily("2026-10-01", "a1b2c5", "B738", "DAL")
+        self.daily("2026-10-01", "a1b2c6", "B737", "SWA")
+        self.daily("2026-10-01", "a1b2c7", "B738", "SWA")
+        incremental = app.Detector._first_history(self.db, self.TODAY, yesterday)
+        self.assertEqual(incremental["operators"], {"DAL": 2, "SWA": 1})
+        self.assertEqual(
+            incremental["operators"], app.Detector._first_history(self.db, self.TODAY)["operators"]
+        )
+
+    def test_operators_wait_for_coverage_and_a_baseline_without_them_is_read_again(self):
+        self.db.execute("DELETE FROM coverage WHERE day>='2026-09-30'")
+        self.assertIsNone(app.Detector._first_history(self.db, self.TODAY)["operators"])
+        self.db.execute("INSERT INTO coverage VALUES ('2026-09-30',3600,1),('2026-10-01',3600,1)")
+        saved = app.Detector._first_history(self.db, "2026-10-01")
+        del saved["operators"]
+        self.assertEqual(app.Detector._first_history(self.db, self.TODAY, saved)["operators"], {"DAL": 1})
+
+    def test_expiring_days_leave_the_operator_counts(self):
+        baseline = app.Detector._first_history(self.db, self.TODAY)
+        expiring = app.Detector._first_expiring(self.db, "2026-09-02")
+        self.assertEqual(expiring["operators"], {})
+        self.db.execute("DELETE FROM coverage WHERE day<'2026-09-02'")
+        kept = {**baseline, **app.Detector._without_days(self.db, baseline, expiring)}
+        self.assertEqual(kept["operators"], {"DAL": 1})
+        expiring = app.Detector._first_expiring(self.db, "2026-09-11")
+        self.assertEqual(expiring["operators"], {"DAL": 1})
+        self.db.execute("DELETE FROM coverage WHERE day<'2026-09-11'")
+        # Fewer than 30 covered days remain, so a full read would not count operators either.
+        self.assertIsNone(app.Detector._without_days(self.db, kept, expiring)["operators"])
+        self.assertIsNone(
+            app.Detector._without_days(
+                self.db, {**baseline, "operators": {"DAL": 0}}, {**expiring, "coverage_days": 0}
+            )
+        )
+
+    def test_first_sightings_pass_operator_days_and_count_earlier_today(self):
+        detector = app.Detector(self.path)
+        checks = rules.identity_checks(self.AIRCRAFT)
+        kinds = [f.kind for f in detector._first_sightings(self.db, self.AIRCRAFT, self.STAMP, checks)]
+        self.assertNotIn("first_operator_here", kinds)
+        first = {**self.AIRCRAFT, "flight": "SWA22"}
+        kinds = [f.kind for f in detector._first_sightings(self.db, first, self.STAMP, checks)]
+        self.assertIn("first_operator_here", kinds)
+        # Another address already flew the designator today, before this baseline was built.
+        self.daily(self.TODAY, "a1b2c8", "B38M", "JBU")
+        later = app.Detector(self.path)
+        jetblue = {**self.AIRCRAFT, "flight": "JBU100"}
+        kinds = [f.kind for f in later._first_sightings(self.db, jetblue, self.STAMP, checks)]
+        self.assertNotIn("first_operator_here", kinds)
 
 
 if __name__ == "__main__":

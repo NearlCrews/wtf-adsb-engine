@@ -155,7 +155,7 @@ LABEL_CAVEAT = (
     "readings at the position time."
 )
 FIRST_SIGHTING_KINDS = set(kinds.where(first_sighting=True))
-FIRST_SIGHTING_SCOPES = {"type", "allocation_country"}
+FIRST_SIGHTING_SCOPES = {"type", "allocation_country", "operator"}
 # A rated finding's comparison (rules._rated_altitude, rules._rated_speed, and wind.py):
 # the field each kind compares and the certified limits a block may name.
 RATED_FIELDS = kinds.table("rated_field")

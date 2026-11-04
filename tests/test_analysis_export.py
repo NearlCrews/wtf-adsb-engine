@@ -149,6 +149,20 @@ class ProjectionTests(unittest.TestCase):
         packet = stories.evidence_packet(projected)
         self.assertIsNone(packet["aircraft"]["icao_address"])
 
+    def test_operator_first_sighting_projects_unchanged_and_unknown_scopes_drop(self):
+        block = {
+            "scope": "operator",
+            "designator": "DAL",
+            "operator": "Delta Air Lines",
+            "coverage_days": 45,
+            "since": "2026-09-01",
+        }
+        self.assertEqual(export.EVIDENCE({"first_sighting": block})["first_sighting"], block)
+        projected = export.EVIDENCE({"first_sighting": {**block, "scope": "fleet"}})["first_sighting"]
+        self.assertNotIn("scope", projected)
+        self.assertIsNone(stories.first_sighting({**block, "scope": "fleet"}))
+        self.assertEqual(stories.first_sighting(block)["scope"], "operator")
+
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
         source["kind"] = "vfr_code_above_fl180"

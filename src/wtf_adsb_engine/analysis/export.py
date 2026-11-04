@@ -471,6 +471,8 @@ EVIDENCE_FIELDS = {
             "scope": _enum(*stories.FIRST_SIGHTING_SCOPES),
             "country": _text,
             "type": _identifier("type_code"),
+            "designator": _token,
+            "operator": _text,
             "other_type_days": _numeric,
             "coverage_days": _numeric,
             "since": _text,
