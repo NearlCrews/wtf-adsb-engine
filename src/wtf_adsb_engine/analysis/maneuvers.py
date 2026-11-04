@@ -2884,6 +2884,11 @@ def formation_findings(pairs, aircraft=None, *, archive=None):
 RESPONSE_WINDOW = (30, 20)
 
 
+# An advisory's context samples, and its threat's track, cover this long before the
+# first active message and after the last message.
+CONTEXT_MARGIN_SECONDS = 30
+
+
 # A vertical rate within this of zero is level flight.
 LEVEL_FPM = 500
 
@@ -3095,7 +3100,9 @@ def tcas_episode(acas_reports, own_points, threat_points=(), *, own, threat=None
     # tracks' fixes, whose provenance and integrity are judged separately from it.
     separation = _separation_flags(own_points, threat_points, first - 60, last + 60) if approach else []
     flags.extend(separation)
-    window = [p for p in own_points if first - 30 <= p["ts"] <= last + 30]
+    window = [
+        p for p in own_points if first - CONTEXT_MARGIN_SECONDS <= p["ts"] <= last + CONTEXT_MARGIN_SECONDS
+    ]
     flags.extend(quality(window, ("alt_baro",)) if window else ["matching_altitude_unavailable"])
     points = [{"ts": m["unix_timestamp"], "source": own.get("type", "unknown")} for m in episode]
     complement = next((m["advisory_complement"] for m in active if m.get("advisory_complement")), None)
@@ -3156,7 +3163,8 @@ def tcas_episode(acas_reports, own_points, threat_points=(), *, own, threat=None
                 track=[
                     p
                     for p in threat_points
-                    if (stamp := number(p.get("ts"))) is not None and first - 30 <= stamp <= last + 30
+                    if (stamp := number(p.get("ts"))) is not None
+                    and first - CONTEXT_MARGIN_SECONDS <= stamp <= last + CONTEXT_MARGIN_SECONDS
                 ],
             )
         ]

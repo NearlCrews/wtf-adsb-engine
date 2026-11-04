@@ -19,7 +19,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid5
 
-from . import airport_context, curation, episode_evidence, rules, selection, stories, telemetry
+from . import airport_context, curation, episode_evidence, maneuvers, rules, selection, stories, telemetry
 from .identity import IdentityStore
 from .journal_health import watermark as journal_watermark
 from .numeric import number
@@ -711,23 +711,25 @@ def _positioned(points):
 
 
 def media_parts(source):
-    """The drawn track parts: the first sample list that holds positions. A TCAS
-    finding's maneuver samples are positionless advisory reports, so its context
-    samples supply the map."""
+    """The drawn track parts: the first sample list that holds positions, within the
+    finding's interval. A TCAS finding's maneuver samples are positionless advisory
+    reports, so its context samples supply the map, over the context window around
+    the interval (maneuvers.CONTEXT_MARGIN_SECONDS each side)."""
     evidence = source["evidence"]
-    points = next(
+    key, points = next(
         (
-            found
+            (key, found)
             for key in ("maneuver_samples", "pattern_samples", "track", "context_samples")
             if _positioned(found := evidence.get(key))
         ),
-        [],
+        (None, []),
     )
+    margin = maneuvers.CONTEXT_MARGIN_SECONDS if key == "context_samples" else 0
     window = [
         point
         for point in points
         if (stamp := number(point.get("ts"))) is not None
-        and source["first_seen"] <= stamp <= source["last_seen"]
+        and source["first_seen"] - margin <= stamp <= source["last_seen"] + margin
     ]
     return airport_context.parts(window, describe=_point_media)
 

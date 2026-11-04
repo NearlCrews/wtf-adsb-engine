@@ -36,7 +36,8 @@ and evidence contract versions are tracked separately.
 
 - TCAS findings export drawable media parts. The parts now come from the first
   sample list that holds positions, so the context samples supply them when the
-  maneuver samples are positionless advisory reports.
+  maneuver samples are positionless advisory reports. Parts drawn from context
+  samples keep their 30 s before and after the finding's interval.
 - Continuous collection no longer fails a poll with "database is locked" when
   enrichment writes the journal at the same moment. The collector now takes the
   journal's write lock before it reads, so it waits for another writer instead

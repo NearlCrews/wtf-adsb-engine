@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from test_analysis_episode_geometry import LAT0, LON0, T0, ll
 
-from wtf_adsb_engine.analysis import airport_context, app, maneuvers, selection, telemetry
+from wtf_adsb_engine.analysis import airport_context, app, export, maneuvers, selection, telemetry
 
 OWN = {"hex": "a00001", "r": "N1CJ", "t": "C25C", "type": "adsb_icao"}
 
@@ -440,6 +440,20 @@ class TcasTests(unittest.TestCase):
         self.assertFalse({"r_dst", "r_dir"} & {key for p in track for key in p})
         missing = self.episode([advisory(0), advisory(5)], threat=[])
         self.assertNotIn("track", missing.evidence["participants"][0])
+
+    def test_media_draws_the_context_window_of_a_brief_advisory(self):
+        finding = self.episode([advisory(0), advisory(5)])
+        info = finding.evidence["maneuver"]
+        source = {
+            "evidence": export.EVIDENCE(finding.evidence),
+            "first_seen": info["started_at"],
+            "last_seen": info["ended_at"],
+        }
+        drawn = [p["ts"] for part in export.media_parts(source) for p in part]
+        threat = [p["ts"] for p in source["evidence"]["participants"][0]["track"]]
+        self.assertEqual((drawn[0], drawn[-1]), (T0 - 30, T0 + 30))
+        self.assertEqual((drawn[0], drawn[-1]), (threat[0], threat[-1]))
+        self.assertEqual(len(drawn), 7)
 
     def test_single_message_or_ground_does_not_confirm(self):
         self.assertFalse(self.episode([advisory(0)]).evidence["maneuver"]["confirmed"])

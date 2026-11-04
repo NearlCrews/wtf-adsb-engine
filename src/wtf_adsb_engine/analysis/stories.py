@@ -748,8 +748,9 @@ def participant_track(raw):
     return track
 
 
-def participants(evidence, primary=None):
-    """Other aircraft in a multi-aircraft episode, using the primary identity allowlist."""
+def participants(evidence, primary=None, *, include_track=True):
+    """Other aircraft in a multi-aircraft episode, using the primary identity allowlist.
+    Each keeps its own track only when ``include_track`` is set."""
     raw = evidence.get("participants")
     if not isinstance(raw, list) and isinstance(evidence.get("maneuver"), dict):
         raw = evidence["maneuver"].get("participants")
@@ -786,7 +787,7 @@ def participants(evidence, primary=None):
                 "measurements": values,
             }
         )
-        if track := participant_track(item.get("track")):
+        if include_track and (track := participant_track(item.get("track"))):
             result[-1]["track"] = track
     result.sort(key=lambda item: (PARTICIPANT_ROLES.index(item["role"]), item["icao_address"] or "~"))
     return result[:12]
@@ -891,7 +892,7 @@ def evidence_packet(event, include_track=True, *, observation_interval=None):
         packet["type_check"] = check
     if checks := identity_checks(evidence.get("identity_checks")):
         packet["identity_checks"] = checks
-    if others := participants(evidence, identity["icao_address"]):
+    if others := participants(evidence, identity["icao_address"], include_track=include_track):
         packet["participants"] = others
     if (
         isinstance(evidence.get("replay_refresh"), dict)

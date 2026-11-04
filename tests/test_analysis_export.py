@@ -260,6 +260,11 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(stories.participants(projected)[0]["track"], [point])
         self.assertEqual(stories.participants({"participants": [member]})[0]["track"], [point])
         self.assertNotIn("track", stories.participants({"participants": [{**member, "track": None}]})[0])
+        source = export.project_source(sample_source())
+        source["evidence"]["participants"] = projected["participants"]
+        self.assertEqual(stories.evidence_packet(source)["participants"][0]["track"], [point])
+        hidden = stories.evidence_packet(source, include_track=False)["participants"][0]
+        self.assertNotIn("track", hidden)
 
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
