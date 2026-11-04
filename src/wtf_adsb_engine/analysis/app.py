@@ -550,9 +550,40 @@ def _implausible_speed(db, address, session, previous):
     )
 
 
+# Live readings the journal keeps out (_noise): no story or review ever uses them.
+NOISE_KINDS = frozenset({"above_rated_speed", "above_rated_altitude", "fast", "high"})
+
+
+def _noise(a, finding):
+    """A finding the journal keeps out: a within-limit rated reading, or a spotting reading below its threshold.
+
+    The threshold is the one the detector applied (the finding's performance_profile),
+    else rules.performance_thresholds() for the report.
+    """
+    if finding.kind not in NOISE_KINDS:
+        return False
+    evidence = finding.evidence if isinstance(finding.evidence, dict) else {}
+    if finding.kind.startswith("above_rated_"):
+        rated = evidence.get("rated_limit")
+        return isinstance(rated, dict) and rated.get("verdict") == "within"
+    speed, altitude = rules.performance_thresholds(a)
+    profile = evidence.get("performance_profile")
+    if isinstance(profile, dict):
+        speed = number(profile.get("ground_speed_threshold_kn")) or speed
+        altitude = number(profile.get("altitude_threshold_ft")) or altitude
+    value = number(finding.value)
+    return value is None or value < (speed if finding.kind == "fast" else altitude)
+
+
 def record(db, a, finding, first, last, hits=1, origin=LIVE_ORIGIN, extra=None):
-    a = stored(a)
+    """Save or merge one finding; returns the row id, or None for a live noise reading.
+
+    Archive and replay origins keep every reading.
+    """
     live = origin == LIVE_ORIGIN
+    if live and _noise(a, finding):
+        return None
+    a = stored(a)
     # Pattern episodes should not collapse separate flights six hours apart.
     merge_gap = PATTERN_GAP if finding.category == "patterns" else selection.ENCOUNTER_GAP
     session = (extra or {}).get("encounter_start")
@@ -2398,7 +2429,8 @@ class Detector:
         event_id = record(
             db, a, finding, first, last, hits=1 if pending["recorded"] else pending["hits"], extra=extra
         )
-        pending["recorded"] = True
+        # A reading the journal kept out leaves the count for a later saved one.
+        pending["recorded"] = pending["recorded"] or event_id is not None
         return event_id
 
     # The report fields each numeric or envelope finding measures (kinds names why a rated

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from wtf_adsb_engine import wire
 from wtf_adsb_engine.analysis import app, curation, export, rules, selection, typecheck
@@ -276,6 +277,9 @@ class ExportedNorms(unittest.TestCase):
             row = db.execute("SELECT norm FROM type_norms WHERE finding_id=?", (identifier,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    # The exports 40 days apart would otherwise also see the fixture's pending type checks
+    # go stale (curation.STALE_CHECK_SECONDS); this test is about the norm alone.
+    @patch.object(curation, "STALE_CHECK_SECONDS", 90 * DAY)
     def test_a_quiet_group_keeps_its_norm_while_the_window_moves(self):
         before = export.snapshot_state(self.path, QUIET, identity_path=self.sidecar)["observations"]
         self.move_window()
@@ -317,6 +321,8 @@ class ExportedNorms(unittest.TestCase):
                 (json.dumps(type_check(state, "B738")),),
             )
 
+    # A 40-day outage outlasts the 30-day stale limit, which would release the hold.
+    @patch.object(curation, "STALE_CHECK_SECONDS", 90 * DAY)
     def test_a_held_finding_freezes_its_norm_once_its_type_check_clears(self):
         # A type check outage holds the record (curation.type_hold) after its group turns quiet.
         self.set_check("failed")

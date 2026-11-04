@@ -375,11 +375,12 @@ def _brief(event):
     )
 
 
-def assess(event, profiles=None, *, independent=False):
+def assess(event, profiles=None, *, independent=False, now=None):
     """Score one saved finding for private views and story eligibility.
 
     Context-only kinds stay below promotion unless `independent` says their
-    encounter also holds an independently promoted finding.
+    encounter also holds an independently promoted finding. `now` (default: the
+    current time) dates a stale type check (curation.type_check_state).
     """
     evidence = _mapping(event.get("evidence"))
     aircraft = _mapping(evidence.get("aircraft"))
@@ -534,13 +535,13 @@ def assess(event, profiles=None, *, independent=False):
     if kind in IDENTITY_KINDS and _mapping(evidence.get("identity_checks")).get("conflict") is True:
         score, review = min(score, 60), True
         reasons.append("Identity checks disagree; the database identity cannot support this story")
-    blocking = curation.gates(event)
+    blocking = curation.gates(event, now=now)
     if blocking:
         # A second source's disagreement, too few reports, or an unsettled rated
         # verdict hold the finding for review whatever its score.
         review = True
         reasons.extend(reason for _, reason in blocking)
-    hold = curation.type_hold(event)
+    hold = curation.type_hold(event, now=now)
     if hold:
         # Not a review hold: selection waits for the type check and resumes unattended.
         reasons.append(hold[1])
@@ -711,7 +712,7 @@ def encounters(
             # A shape a later circle or survey grid covers is never a separate reason.
             continue
         event["selection"] = decision = assess(
-            {**event, "verdict": None} if ignore_reviews else event, profiles
+            {**event, "verdict": None} if ignore_reviews else event, profiles, now=now
         )
         aircraft = event["evidence"]["aircraft"]
         # Any identity reason repeats the same airframe's identity story.
@@ -774,7 +775,10 @@ def encounters(
             for event in group["events"]:
                 if curation.context_only(event["kind"], event["evidence"]):
                     event["selection"] = assess(
-                        {**event, "verdict": None} if ignore_reviews else event, profiles, independent=True
+                        {**event, "verdict": None} if ignore_reviews else event,
+                        profiles,
+                        independent=True,
+                        now=now,
                     )
         key = curation.episode_key(group)
         if key in keys:

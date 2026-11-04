@@ -186,3 +186,26 @@ class UnregisteredRecheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PendingOrder(unittest.TestCase):
+    """The worker asks about the strongest, newest candidates first."""
+
+    def test_pending_orders_by_score_then_newest_first_sighting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "journal.sqlite3"
+            app.initialize(path)
+            with app.connect(path) as db:
+                # The latest sighting no longer decides the order.
+                for address, score, first, last in (
+                    ("a00001", 60, NOW - 600, NOW - 60),
+                    ("a00002", 80, NOW - 7200, NOW - 120),
+                    ("a00003", 80, NOW - 1200, NOW - 180),
+                ):
+                    finding = Finding(
+                        "type_speed_mismatch", "oddities", "Test", 500, "kn", "w", "e", score, "Test", {}
+                    )
+                    aircraft = {"hex": address, "r": "N1", "t": "C172", "type": "adsb_icao", "gs": 500}
+                    app.record(db, aircraft, finding, first, last, hits=6)
+                found = [event["hex"] for event in typecheck.pending(db, since=0, now=NOW)]
+        self.assertEqual(found, ["a00003", "a00002", "a00001"])

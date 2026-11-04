@@ -734,7 +734,7 @@ class _TypeNorms:
     """
 
     def __init__(self, connection, rows, identities, now):
-        self.connection, self.rows, self.identities = connection, rows, identities
+        self.connection, self.rows, self.identities, self.now = connection, rows, identities, now
         self.quiet_before = now - selection.QUIET_SECONDS
         self.contexts = None
         self.indexed, self.norms = {}, {}
@@ -820,7 +820,7 @@ class _TypeNorms:
         inputs = _norm_inputs(source["evidence"].get("aircraft"), source["hex"])
         if self.identities is None:
             return self.compute(*inputs)
-        settled = last_seen <= self.quiet_before and curation.type_hold(source) is None
+        settled = last_seen <= self.quiet_before and curation.type_hold(source, now=self.now) is None
         return self.identities.type_norm(finding_id, inputs, settled, lambda: self.compute(*inputs))
 
 

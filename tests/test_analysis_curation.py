@@ -188,7 +188,9 @@ class CurationTests(unittest.TestCase):
         for kind in sorted(typecheck.REGISTRY_TYPE_KINDS):
             with self.subTest(kind=kind):
                 self.assertEqual([rule for rule, _ in curation.gates(with_check(kind, "disagrees"))], [])
-                self.assertEqual(curation.type_hold(with_check(kind, "pending"))[0], "type_check_pending")
+                self.assertEqual(
+                    curation.type_hold(with_check(kind, "pending"), now=START)[0], "type_check_pending"
+                )
                 # No registry listing the address still leaves the type uncorroborated.
                 self.assertIn(
                     "type_uncorroborated",
@@ -290,3 +292,43 @@ class ReadingImplausible(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaleTypeChecks(unittest.TestCase):
+    NOW = START + 40 * 86400
+
+    def event(self, kind, state, age_days):
+        event = finding(1, kind, value=394, address="abcdef")
+        event["first_seen"] = self.NOW - age_days * 86400
+        if state is None:
+            del event["evidence"]["type_check"]
+        else:
+            event["evidence"]["type_check"] = {"state": state, "source": "adsbdb", "checked_at": START}
+        return event
+
+    def test_a_check_pending_for_thirty_days_stops_holding_and_counts_as_unavailable(self):
+        self.assertEqual(curation.STALE_CHECK_SECONDS, 30 * 86400)
+        for kind in ("type_speed_mismatch", "first_type_here"):
+            for state in (None, "failed"):
+                with self.subTest(kind=kind, state=state):
+                    fresh, stale = self.event(kind, state, 2), self.event(kind, state, 31)
+                    self.assertEqual(curation.type_hold(fresh, now=self.NOW)[0], "type_check_pending")
+                    self.assertIsNone(curation.type_hold(stale, now=self.NOW))
+                    evidence, first = stale["evidence"], stale["first_seen"]
+                    self.assertEqual(
+                        curation.type_check_state(evidence, first_seen=first, now=self.NOW), "unavailable"
+                    )
+                    self.assertIn(
+                        curation.type_check_state(
+                            fresh["evidence"], first_seen=fresh["first_seen"], now=self.NOW
+                        ),
+                        {"pending", "failed"},
+                    )
+        # A stale check leaves a performance claim uncorroborated; a settled one is never stale.
+        rules = [
+            rule for rule, _ in curation.gates(self.event("type_speed_mismatch", None, 31), now=self.NOW)
+        ]
+        self.assertIn("type_uncorroborated", rules)
+        settled = self.event("type_speed_mismatch", "agrees", 31)
+        self.assertEqual(curation.type_check_state(settled["evidence"], first_seen=0, now=self.NOW), "agrees")
+        self.assertNotIn("type_uncorroborated", [rule for rule, _ in curation.gates(settled, now=self.NOW)])

@@ -260,3 +260,43 @@ class FirstOperatorBaseline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JournalNoise(unittest.TestCase):
+    def test_within_verdict_and_below_threshold_findings_are_not_recorded(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "journal.sqlite3"
+            app.initialize(path)
+            db = app.connect(path)
+            self.addCleanup(db.close)
+            a = {
+                "hex": "a1b2c3",
+                "type": "adsb_icao",
+                "r": "N1",
+                "t": "A320",
+                "gs": 520,
+                "alt_baro": 35000,
+                "lat": 42.5,
+                "lon": -83.4,
+            }
+
+            def finding(kind, value, unit, evidence):
+                return rules.Finding(kind, "performance", "t", value, unit, "w", "e", 70, evidence=evidence)
+
+            within = finding("above_rated_speed", 520, "kn", {"rated_limit": {"verdict": "within"}})
+            self.assertIsNone(app.record(db, a, within, 0, 60))
+            self.assertIsNone(app.record(db, a, finding("fast", 520, "kn", {}), 0, 60))
+            self.assertIsNone(app.record(db, a, finding("high", 41000, "ft", {}), 0, 60))
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 0)
+            exceeded = finding("above_rated_speed", 620, "kn", {"rated_limit": {"verdict": "exceeded"}})
+            self.assertIsNotNone(app.record(db, a, exceeded, 0, 60))
+            self.assertIsNotNone(app.record(db, a, finding("fast", 610, "kn", {}), 0, 60))
+            # A local spotting threshold the detector applied is the finding's own threshold.
+            local = {
+                "performance_profile": {"ground_speed_threshold_kn": 500, "altitude_threshold_ft": 40000}
+            }
+            self.assertIsNotNone(app.record(db, a, finding("high", 41000, "ft", local), 0, 60))
+            # Archive imports keep every reading.
+            archive = sorted(app.ARCHIVE_ORIGINS)[0]
+            self.assertIsNotNone(app.record(db, a, within, 0, 60, origin=archive))
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 4)

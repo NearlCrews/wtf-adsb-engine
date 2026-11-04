@@ -268,9 +268,11 @@ def fill(event, row, now=None):
 def pending(db, since, address=None, *, now=None):
     """Live type-dependent events last seen since `since` whose check is missing, unsettled
     (type_check_state's pending or failed) or compared with a type the aircraft no longer
-    lists, newest first. Then, ordered by address, live RECHECK_KINDS events first seen
-    within RECHECK_WINDOW of `now` whose saved check is older than RECHECK_SECONDS. One
-    call reads at most PENDING_LIMIT events, the first query's before the recheck's."""
+    lists. Then live RECHECK_KINDS events first seen within RECHECK_WINDOW of `now` whose
+    saved check is older than RECHECK_SECONDS. Each part lists the highest scores first,
+    then the newest first sightings, so the worker asks about the strongest candidates
+    first; the journal keeps no selection result to order by. One call reads at most
+    PENDING_LIMIT events, the first query's before the recheck's."""
     from .app import LIVE_ORIGIN
 
     now = time.time() if now is None else now
@@ -287,7 +289,7 @@ def pending(db, since, address=None, *, now=None):
         where += " AND hex=?"
         args.append(address)
     rows = db.execute(
-        f"SELECT id,hex,kind,evidence FROM events WHERE {where} ORDER BY last_seen DESC LIMIT ?",
+        f"SELECT id,hex,kind,evidence FROM events WHERE {where} ORDER BY score DESC, first_seen DESC, id LIMIT ?",
         (*args, PENDING_LIMIT),
     ).fetchall()
     if _has_table(db) and len(rows) < PENDING_LIMIT:
@@ -299,7 +301,7 @@ def pending(db, since, address=None, *, now=None):
             recheck_args.append(address)
         rows += db.execute(
             f"""SELECT e.id,e.hex,e.kind,e.evidence FROM events e JOIN type_checks t ON t.hex=e.hex
-                WHERE {recheck} ORDER BY e.hex, e.id LIMIT ?""",
+                WHERE {recheck} ORDER BY e.score DESC, e.first_seen DESC, e.id LIMIT ?""",
             (*recheck_args, PENDING_LIMIT - len(rows)),
         ).fetchall()
     events, seen = [], set()

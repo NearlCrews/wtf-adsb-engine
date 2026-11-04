@@ -1,13 +1,14 @@
 """Choose a small daily reading list without approving evidence or publishing it."""
 
 import re
+import time
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 from typing import NamedTuple
 
-from . import kinds, limits, reference
-from .enrichment_rules import REGISTRY_TYPE_KINDS, TYPE_DEPENDENT_KINDS, type_check_state
+from . import enrichment_rules, kinds, limits, reference
+from .enrichment_rules import REGISTRY_TYPE_KINDS, TYPE_DEPENDENT_KINDS
 from .maneuvers import HIGH_RATE_FPM, altitude_agrees
 from .rules import (
     MIN_REPORT_SECONDS,
@@ -206,19 +207,39 @@ def report_count(event):
     return reports, max(0, span)
 
 
-def type_hold(event):
+# A second-source check still unsettled this long after the finding's first sighting
+# no longer holds it: the check counts as unavailable (type_check_state).
+STALE_CHECK_SECONDS = 30 * 86400
+
+
+def type_check_state(evidence, first_seen=None, now=None):
+    """enrichment_rules.type_check_state, with a stale check reported "unavailable".
+
+    A pending or failed check on a finding first seen more than
+    STALE_CHECK_SECONDS before `now` (default: the current time) is stale.
+    """
+    state = enrichment_rules.type_check_state(evidence)
+    first = number(first_seen)
+    if state in {"pending", "failed"} and first is not None:
+        if (time.time() if now is None else now) - first > STALE_CHECK_SECONDS:
+            return "unavailable"
+    return state
+
+
+def type_hold(event, *, now=None):
     """Why a type-dependent finding is not yet a story candidate, as (rule, reason), or None.
 
     A pending or failed second-source check holds selection until the worker's
-    next answer. The hold is not a review flag and never unpublishes a released
-    story: the publisher's next pass selects the finding once the check arrives.
-    A disagreeing check, or no registry record for a performance kind, is a
-    blocking gate instead (gates()).
+    next answer, for at most STALE_CHECK_SECONDS after the finding's first
+    sighting (type_check_state). The hold is not a review flag and never
+    unpublishes a released story: the publisher's next pass selects the finding
+    once the check arrives. A disagreeing check, or no registry record for a
+    performance kind, is a blocking gate instead (gates()).
     """
     kind = event["kind"]
     if kind not in TYPE_DEPENDENT_KINDS:
         return None
-    state = type_check_state(event.get("evidence"))
+    state = type_check_state(event.get("evidence"), event.get("first_seen"), now)
     if state in {"pending", "failed"}:
         return (
             "type_check_pending",
@@ -240,7 +261,7 @@ def _direct_speed(aircraft):
     return kind in DIRECT and source_for({**aircraft, "source": kind}, "gs") in DIRECT
 
 
-def gates(event):
+def gates(event, *, now=None):
     """Blocking evidence rules for one finding, as (rule, reason) pairs.
 
     type_disagrees: a second-source registry lists another type, so a
@@ -265,13 +286,14 @@ def gates(event):
     envelope the envelope's cap and ceiling are skipped, while the absolute
     speed bound and a rated limit from reference.limits still apply; a missing
     reading is no evidence and no gate. A check still pending
-    is a selection hold that resolves on its own: see type_hold().
+    is a selection hold that resolves on its own: see type_hold(). One left
+    unsettled for STALE_CHECK_SECONDS counts as unavailable at `now`.
     """
     kind = event["kind"]
     evidence = _mapping(event.get("evidence"))
     found = []
     if kind in TYPE_DEPENDENT_KINDS:
-        state = type_check_state(evidence)
+        state = type_check_state(evidence, event.get("first_seen"), now)
         check = _mapping(evidence.get("type_check"))
         if state == "disagrees" and kind not in REGISTRY_TYPE_KINDS:
             found.append(
@@ -284,7 +306,9 @@ def gates(event):
             found.append(
                 (
                     "type_uncorroborated",
-                    "No registry lists this address's type; a performance claim needs corroboration",
+                    "No registry lists this address's type; a performance claim needs corroboration"
+                    if enrichment_rules.type_check_state(evidence) == "unavailable"
+                    else f"The second-source type check did not complete within {STALE_CHECK_SECONDS // 86400} days; a performance claim needs corroboration",
                 )
             )
     if kind.startswith("outlier_") or kind in ENVELOPE_KINDS or kind in RATED_KINDS:
