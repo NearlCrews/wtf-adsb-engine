@@ -243,13 +243,40 @@ class FirstOperatorBaseline(unittest.TestCase):
             incremental["operators"], app.Detector._first_history(self.db, self.TODAY)["operators"]
         )
 
+    def test_one_scan_counts_types_states_and_operators_alike_in_every_read(self):
+        def allocation(address):
+            return {"country": "US", "name": "United States"} if address.startswith("a") else None
+
+        self.daily("2026-10-01", "a1b2c5", "A321", "DAL")
+        self.daily("2026-10-01", "c1b2c6", "B738", "")
+        with patch.object(app.reference, "allocation", side_effect=allocation):
+            full = app.Detector._first_history(self.db, self.TODAY)
+            self.assertEqual(full["types"], {"A321": 2, "C172": 1, "B738": 1})
+            self.assertEqual(full["countries"], {"US": 3})
+            self.assertEqual(full["operators"], {"DAL": 2})
+            incremental = app.Detector._first_history(
+                self.db, self.TODAY, app.Detector._first_history(self.db, "2026-10-01")
+            )
+            for key in ("types", "countries", "operators", "coverage_days", "operator_coverage_days"):
+                self.assertEqual(incremental[key], full[key], key)
+            expiring = app.Detector._first_expiring(self.db, "2026-09-11")
+        self.assertEqual(
+            {key: expiring[key] for key in ("types", "countries", "operators")},
+            {"types": {"A321": 1}, "countries": {"US": 1}, "operators": {"DAL": 1}},
+        )
+        self.assertEqual((expiring["coverage_days"], expiring["operator_coverage_days"]), (10, 10))
+
     def test_operators_wait_for_coverage_and_a_baseline_without_them_is_read_again(self):
         self.db.execute("DELETE FROM coverage WHERE day>='2026-09-30'")
         self.assertIsNone(app.Detector._first_history(self.db, self.TODAY)["operators"])
         self.db.execute("INSERT INTO coverage VALUES ('2026-09-30',3600,1),('2026-10-01',3600,1)")
         saved = app.Detector._first_history(self.db, "2026-10-01")
-        del saved["operators"]
-        self.assertEqual(app.Detector._first_history(self.db, self.TODAY, saved)["operators"], {"DAL": 1})
+        # A previous day's baseline saved before operators were counted is not extended.
+        del saved["operators"], saved["aircraft"]
+        app.put_meta(self.db, app.FIRST_BASELINE, saved)
+        cache = app.Detector(self.path)._first_cache(self.db, self.TODAY, "a05f2d", self.STAMP)
+        self.assertEqual(cache["operators"], {"DAL": 1})
+        self.assertEqual(cache["coverage_days"], 31)
 
     def test_expiring_days_leave_the_operator_counts(self):
         baseline = app.Detector._first_history(self.db, self.TODAY)

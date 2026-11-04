@@ -938,6 +938,25 @@ def _complete_baseline(baseline):
     return isinstance(baseline, dict) and all(key in baseline for key in FIRST_BASELINE_KEYS)
 
 
+def _combine_counts(baseline, change, sign):
+    """A first-sighting baseline's coverage and day counts with ``change``'s added
+    (``sign`` 1) or taken out (-1).
+
+    A map the baseline does not count (None) stays None, and a count that reaches
+    zero is dropped; a negative one is kept for the caller to refuse.
+    """
+    result = {key: baseline[key] + sign * change[key] for key in ("coverage_days", "operator_coverage_days")}
+    for key in ("types", "countries", "operators"):
+        if baseline[key] is None:
+            result[key] = None
+            continue
+        counts = dict(baseline[key])
+        for name, days in (change[key] or {}).items():
+            counts[name] = counts.get(name, 0) + sign * days
+        result[key] = {name: days for name, days in counts.items() if days}
+    return result
+
+
 class Detector:
     def __init__(self, path=DATABASE, *, require_complete=False):
         self.path = path
@@ -1584,22 +1603,21 @@ class Detector:
     def _first_cache(self, db, day, address, stamp):
         """The first-sighting baseline for ``day``, built once (see _first_history).
 
-        A failed build is retried an hour later; until then each lookup raises,
-        so the detector's status keeps reporting the failure.
+        The previous day's baseline, in memory or saved, is used only when it is
+        complete (_complete_baseline): one saved before operators were counted is
+        built again. A failed build is retried an hour later; until then each
+        lookup raises, so the detector's status keeps reporting the failure.
         """
         cache = self.first_sightings.get(day, False)
         if cache is None and stamp < self.first_retry.get(day, 0):
             raise RuntimeError("First-sighting baseline unavailable until its retry")
         if not cache:
             before = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
-            earlier = self.first_sightings.get(before)
-            if not earlier:
-                saved = meta(db, FIRST_BASELINE)
-                if isinstance(saved, dict) and saved.get("day") in (day, before):
-                    earlier = saved
+            earlier = self.first_sightings.get(before) or meta(db, FIRST_BASELINE)
+            if not (_complete_baseline(earlier) and earlier["day"] in (day, before)):
+                earlier = None
             try:
-                # A baseline saved before operators were counted is built again.
-                if _complete_baseline(earlier) and earlier["day"] == day:
+                if earlier is not None and earlier["day"] == day:
                     cache = {**earlier, "aircraft": {}}
                 else:
                     cache = self._first_history(db, day, earlier)
@@ -1643,23 +1661,58 @@ class Detector:
         return today
 
     @staticmethod
+    def _coverage(db, clause, args):
+        """(covered days, the first of them, covered days that record designators, the
+        first of those) among the coverage rows matching the SQL ``clause``."""
+        return tuple(
+            db.execute(
+                "SELECT COUNT(*),MIN(day),COUNT(CASE WHEN day>=? THEN 1 END),MIN(CASE WHEN day>=? THEN day END) "
+                f"FROM coverage WHERE seconds>=? AND {clause}",
+                (*[_operator_since(db)] * 2, rules.COVERAGE_SECONDS, *args),
+            ).fetchone()
+        )
+
+    @staticmethod
+    def _day_counts(db, clause, args, *, countries=True, operators=True):
+        """{types, countries, operators}: on how many of the days in the daily rows matching
+        the SQL ``clause`` each type, allocation State, and operator designator appeared.
+
+        One scan of the rows; ~ track identifiers never count, and operators count only
+        from OPERATOR_SINCE. A map not asked for is None.
+        """
+        since = _operator_since(db)
+        days = {"types": defaultdict(set), "countries": defaultdict(set), "operators": defaultdict(set)}
+        allocated = {}
+        for address, seen, typecode, designator in db.execute(
+            f"SELECT hex,day,typecode,designator FROM daily WHERE {clause} AND hex NOT LIKE '~%'", args
+        ):
+            if typecode:
+                days["types"][typecode].add(seen)
+            if countries:
+                if address not in allocated:
+                    allocated[address] = (reference.allocation(address) or {}).get("country")
+                if allocated[address]:
+                    days["countries"][allocated[address]].add(seen)
+            if operators and designator and seen >= since:
+                days["operators"][designator].add(seen)
+        wanted = {"types": True, "countries": countries, "operators": operators}
+        return {
+            key: {name: len(seen) for name, seen in found.items()} if wanted[key] else None
+            for key, found in days.items()
+        }
+
+    @staticmethod
     def _first_history(db, day, earlier=None):
         """Coverage, type days, allocation-country days, and operator days before ``day``.
 
-        With the previous day's baseline only that day's rows are read; otherwise
-        every retained day is read once. Countries and operators are each counted
-        once there are enough coverage days for their first-sighting finding.
+        ``earlier`` is a complete baseline (_complete_baseline). With the previous
+        day's, only that day's rows are read; otherwise every retained day is read
+        once. Countries and operators are each counted once there are enough
+        coverage days for their first-sighting finding.
         """
         before = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
-        since = _operator_since(db)
-
-        def country(address):
-            found = reference.allocation(address)
-            return found["country"] if found else None
-
         if (
-            # A baseline saved before operators were counted is read again in full.
-            _complete_baseline(earlier)
+            earlier is not None
             and earlier["day"] == before
             and (
                 earlier["countries"] is not None
@@ -1670,89 +1723,37 @@ class Detector:
                 or earlier["operator_coverage_days"] + 1 < rules.FIRST_OPERATOR_COVERAGE_DAYS
             )
         ):
-            covered = (
-                db.execute(
-                    "SELECT 1 FROM coverage WHERE day=? AND seconds>=?", (before, rules.COVERAGE_SECONDS)
-                ).fetchone()
-                is not None
-            )
-            operator_covered = covered and before >= since
-            types = dict(earlier["types"])
-            for (typecode,) in db.execute(
-                "SELECT DISTINCT typecode FROM daily WHERE day=? AND typecode<>'' AND hex NOT LIKE '~%'",
+            covered, _, operator_covered, _ = Detector._coverage(db, "day=?", (before,))
+            added = Detector._day_counts(
+                db,
+                "day=?",
                 (before,),
-            ):
-                types[typecode] = types.get(typecode, 0) + 1
-            countries = None
-            if earlier["countries"] is not None:
-                countries = dict(earlier["countries"])
-                seen = {
-                    country(address)
-                    for (address,) in db.execute(
-                        "SELECT DISTINCT hex FROM daily WHERE day=? AND hex NOT LIKE '~%'", (before,)
-                    )
-                }
-                for code in seen - {None}:
-                    countries[code] = countries.get(code, 0) + 1
-            operators = None
-            if earlier["operators"] is not None:
-                operators = dict(earlier["operators"])
-                for (designator,) in db.execute(
-                    "SELECT DISTINCT designator FROM daily WHERE day=? AND day>=? AND designator<>'' AND hex NOT LIKE '~%'",
-                    (before, since),
-                ):
-                    operators[designator] = operators.get(designator, 0) + 1
+                countries=earlier["countries"] is not None,
+                operators=earlier["operators"] is not None,
+            )
+            change = {**added, "coverage_days": covered, "operator_coverage_days": operator_covered}
             return {
                 "day": day,
-                "coverage_days": earlier["coverage_days"] + covered,
+                **_combine_counts(earlier, change, 1),
                 "first_day": earlier["first_day"] or (before if covered else None),
-                "types": types,
-                "countries": countries,
-                "operators": operators,
-                "operator_coverage_days": earlier["operator_coverage_days"] + operator_covered,
                 "operator_first_day": earlier["operator_first_day"] or (before if operator_covered else None),
                 "aircraft": {},
             }
-        coverage_days, first_day = db.execute(
-            "SELECT COUNT(*),MIN(day) FROM coverage WHERE seconds>=? AND day<?",
-            (rules.COVERAGE_SECONDS, day),
-        ).fetchone()
-        types = dict(
-            db.execute(
-                "SELECT typecode,COUNT(DISTINCT day) FROM daily WHERE day<? AND typecode<>'' AND hex NOT LIKE '~%' GROUP BY typecode",
-                (day,),
-            )
+        coverage_days, first_day, operator_coverage_days, operator_first_day = Detector._coverage(
+            db, "day<?", (day,)
         )
-        countries = None
-        if coverage_days >= rules.FIRST_COUNTRY_COVERAGE_DAYS:
-            allocated, days = {}, defaultdict(set)
-            for address, seen in db.execute(
-                "SELECT hex,day FROM daily WHERE day<? AND hex NOT LIKE '~%'", (day,)
-            ):
-                if address not in allocated:
-                    allocated[address] = country(address)
-                if allocated[address]:
-                    days[allocated[address]].add(seen)
-            countries = {code: len(seen) for code, seen in days.items()}
-        operator_coverage_days, operator_first_day = db.execute(
-            "SELECT COUNT(*),MIN(day) FROM coverage WHERE seconds>=? AND day<? AND day>=?",
-            (rules.COVERAGE_SECONDS, day, since),
-        ).fetchone()
-        operators = None
-        if operator_coverage_days >= rules.FIRST_OPERATOR_COVERAGE_DAYS:
-            operators = dict(
-                db.execute(
-                    "SELECT designator,COUNT(DISTINCT day) FROM daily WHERE day<? AND day>=? AND designator<>'' AND hex NOT LIKE '~%' GROUP BY designator",
-                    (day, since),
-                )
-            )
+        counts = Detector._day_counts(
+            db,
+            "day<?",
+            (day,),
+            countries=coverage_days >= rules.FIRST_COUNTRY_COVERAGE_DAYS,
+            operators=operator_coverage_days >= rules.FIRST_OPERATOR_COVERAGE_DAYS,
+        )
         return {
             "day": day,
             "coverage_days": coverage_days,
             "first_day": first_day,
-            "types": types,
-            "countries": countries,
-            "operators": operators,
+            **counts,
             "operator_coverage_days": operator_coverage_days,
             "operator_first_day": operator_first_day,
             "aircraft": {},
@@ -1764,35 +1765,11 @@ class Detector:
         _first_history counts them: covered days, and the days each type, allocation
         State, and operator designator was seen. Read before the prune deletes them;
         usually one day's rows."""
-        since = _operator_since(db)
-        covered, operator_covered = db.execute(
-            "SELECT COUNT(*),COUNT(CASE WHEN day>=? THEN 1 END) FROM coverage WHERE day<? AND seconds>=?",
-            (since, cutoff_day, rules.COVERAGE_SECONDS),
-        ).fetchone()
-        types = dict(
-            db.execute(
-                "SELECT typecode,COUNT(DISTINCT day) FROM daily WHERE day<? AND typecode<>'' AND hex NOT LIKE '~%' GROUP BY typecode",
-                (cutoff_day,),
-            )
-        )
-        days = defaultdict(set)
-        for address, seen in db.execute(
-            "SELECT hex,day FROM daily WHERE day<? AND hex NOT LIKE '~%'", (cutoff_day,)
-        ):
-            if found := reference.allocation(address):
-                days[found["country"]].add(seen)
-        operators = dict(
-            db.execute(
-                "SELECT designator,COUNT(DISTINCT day) FROM daily WHERE day<? AND day>=? AND designator<>'' AND hex NOT LIKE '~%' GROUP BY designator",
-                (cutoff_day, since),
-            )
-        )
+        covered, _, operator_covered, _ = Detector._coverage(db, "day<?", (cutoff_day,))
         return {
             "coverage_days": covered,
-            "types": types,
-            "countries": {code: len(seen) for code, seen in days.items()},
-            "operators": operators,
             "operator_coverage_days": operator_covered,
+            **Detector._day_counts(db, "day<?", (cutoff_day,)),
         }
 
     def _reduce_first_baselines(self, db, expiring):
@@ -1825,54 +1802,25 @@ class Detector:
         they cannot be subtracted."""
         try:
             day = baseline["day"]
-            coverage_days = baseline["coverage_days"] - expiring["coverage_days"]
-            operator_coverage_days = baseline["operator_coverage_days"] - expiring["operator_coverage_days"]
-            types = dict(baseline["types"])
-            for typecode, days in expiring["types"].items():
-                types[typecode] = types.get(typecode, 0) - days
-            countries = None
-            if baseline["countries"] is not None:
-                countries = dict(baseline["countries"])
-                for code, days in expiring["countries"].items():
-                    countries[code] = countries.get(code, 0) - days
-            operators = None
-            if baseline["operators"] is not None:
-                operators = dict(baseline["operators"])
-                for designator, days in expiring["operators"].items():
-                    operators[designator] = operators.get(designator, 0) - days
-        except KeyError, TypeError:
+            counts = _combine_counts(baseline, expiring, -1)
+        except AttributeError, KeyError, TypeError:
             return None
-        counts = [
-            coverage_days,
-            operator_coverage_days,
-            *types.values(),
-            *(countries or {}).values(),
-            *(operators or {}).values(),
+        values = [
+            counts["coverage_days"],
+            counts["operator_coverage_days"],
+            *counts["types"].values(),
+            *(counts["countries"] or {}).values(),
+            *(counts["operators"] or {}).values(),
         ]
-        if not isinstance(day, str) or any(not isinstance(value, int) or value < 0 for value in counts):
+        if not isinstance(day, str) or any(not isinstance(value, int) or value < 0 for value in values):
             return None
-        first_day, operator_first_day = db.execute(
-            "SELECT MIN(day),MIN(CASE WHEN day>=? THEN day END) FROM coverage WHERE seconds>=? AND day<?",
-            (_operator_since(db), rules.COVERAGE_SECONDS, day),
-        ).fetchone()
+        _, first_day, _, operator_first_day = Detector._coverage(db, "day<?", (day,))
         # As a full read: States and operators are counted only once their finding can fire.
-        if coverage_days < rules.FIRST_COUNTRY_COVERAGE_DAYS:
-            countries = None
-        if operator_coverage_days < rules.FIRST_OPERATOR_COVERAGE_DAYS:
-            operators = None
-        return {
-            "coverage_days": coverage_days,
-            "first_day": first_day,
-            "operator_coverage_days": operator_coverage_days,
-            "operator_first_day": operator_first_day,
-            "types": {typecode: days for typecode, days in types.items() if days},
-            "countries": None
-            if countries is None
-            else {code: days for code, days in countries.items() if days},
-            "operators": None
-            if operators is None
-            else {designator: days for designator, days in operators.items() if days},
-        }
+        if counts["coverage_days"] < rules.FIRST_COUNTRY_COVERAGE_DAYS:
+            counts["countries"] = None
+        if counts["operator_coverage_days"] < rules.FIRST_OPERATOR_COVERAGE_DAYS:
+            counts["operators"] = None
+        return {**counts, "first_day": first_day, "operator_first_day": operator_first_day}
 
     def _season_record(self, db, a, history, session, checks):
         """The fastest sustained direct ground speed of a type this season, or None.
