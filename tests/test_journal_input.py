@@ -258,10 +258,6 @@ class FirstOperatorBaseline(unittest.TestCase):
         self.assertNotIn("first_operator_here", kinds)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class JournalNoise(unittest.TestCase):
     def test_within_verdict_and_below_threshold_findings_are_not_recorded(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -310,7 +306,7 @@ class JournalNoise(unittest.TestCase):
             db = app.connect(path)
             self.addCleanup(db.close)
 
-            def saved(address, age_days, verdict):
+            def saved(address, age_days, verdict, origin=app.LIVE_ORIGIN):
                 a = {
                     "hex": address,
                     "type": "adsb_icao",
@@ -331,7 +327,7 @@ class JournalNoise(unittest.TestCase):
                     evidence={"rated_limit": {"verdict": "exceeded"}},
                 )
                 seen = now - age_days * day
-                identifier = app.record(db, a, finding, seen - 60, seen)
+                identifier = app.record(db, a, finding, seen - 60, seen, origin=origin)
                 # The wind worker settles the verdict on the saved row, as wind.py does.
                 db.execute(
                     "UPDATE events SET evidence=json_set(evidence,'$.rated_limit.verdict',?) WHERE id=?",
@@ -346,9 +342,25 @@ class JournalNoise(unittest.TestCase):
             old_within = saved("a00001", 8, "within")
             recent_within = saved("a00002", 2, "within")
             old_exceeded = saved("a00003", 8, "exceeded")
+            archive_within = saved("a00004", 8, "within", origin=sorted(app.ARCHIVE_ORIGINS)[0])
+            # A fast row below the local threshold the detector applied (500 kn).
+            applied = {
+                "performance_profile": {"ground_speed_threshold_kn": 500, "altitude_threshold_ft": 40000}
+            }
+            aircraft = {"hex": "a00005", "type": "adsb_icao", "r": "N5", "t": "A320", "gs": 520}
+            fast = rules.Finding("fast", "performance", "t", 520, "kn", "w", "e", 70, evidence=applied)
+            old_fast = app.record(db, aircraft, fast, now - 8 * day - 60, now - 8 * day)
+            db.execute(
+                "UPDATE events SET value=480,evidence=json_set(evidence,'$.aircraft.gs',480) WHERE id=?",
+                (old_fast,),
+            )
             app.Detector(path)._prune(db, now)
             kept = {row[0] for row in db.execute("SELECT id FROM events")}
-            self.assertEqual(kept, {recent_within, old_exceeded})
+            self.assertEqual(kept, {recent_within, old_exceeded, archive_within})
             reviews = {row[0] for row in db.execute("SELECT event_id FROM event_reviews")}
             self.assertNotIn(old_within, reviews)
             self.assertEqual(app.NOISE_RETENTION, 7 * day)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -597,8 +597,12 @@ def finding_id(source, *, source_instance="receiver"):
     )
 
 
-def project_source(source, *, source_instance="receiver", finding_identifier=None):
-    """Sanctioned migration finding, retaining enough proof for existing policy."""
+def project_source(source, *, source_instance="receiver", finding_identifier=None, now=None):
+    """Sanctioned migration finding, retaining enough proof for existing policy.
+
+    `now` (default: the current time) is the export time a stale type check is dated
+    by when the selection is rebuilt (curation.type_check_state).
+    """
     if source.get("kind") not in FINDING_KINDS:
         return None
     evidence = EVIDENCE(source.get("evidence"))
@@ -657,7 +661,7 @@ def project_source(source, *, source_instance="receiver", finding_identifier=Non
         else None,
         "evidence": evidence,
     }
-    decision = source.get("selection") or selection.assess(result, {})
+    decision = source.get("selection") or selection.assess(result, {}, now=now)
     result["selection"] = {
         key: decision.get(key)
         for key in (
@@ -674,7 +678,7 @@ def project_source(source, *, source_instance="receiver", finding_identifier=Non
         value for value in decision.get("blocking_rules", []) if _token(value) is not _MISSING
     ]
     # Reconstruct reasons from sanitized facts; never forward a saved free-text reason.
-    result["selection"]["reasons"] = selection.assess(result, {})["reasons"]
+    result["selection"]["reasons"] = selection.assess(result, {}, now=now)["reasons"]
     if evidence.get("absorbed_by") or source["kind"] not in stories.STORY_KINDS:
         result["selection"].update(promoted=False, story_eligible=False, review_required=True)
         result["selection"]["blocking_rules"].append(
@@ -934,6 +938,7 @@ def snapshot_state(database, now, *, source_instance="receiver", identity_path=N
                     full,
                     source_instance=source_instance,
                     finding_identifier=identities.finding(full) if identities is not None else None,
+                    now=now,
                 )
                 if projected is not None:
                     events.append(projected)

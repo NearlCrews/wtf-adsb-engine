@@ -290,10 +290,6 @@ class ReadingImplausible(unittest.TestCase):
         self.assertNotIn("reading_implausible", dict(curation.gates(event)))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class StaleTypeChecks(unittest.TestCase):
     NOW = START + 40 * 86400
 
@@ -332,3 +328,7 @@ class StaleTypeChecks(unittest.TestCase):
         settled = self.event("type_speed_mismatch", "agrees", 31)
         self.assertEqual(curation.type_check_state(settled["evidence"], first_seen=0, now=self.NOW), "agrees")
         self.assertNotIn("type_uncorroborated", [rule for rule, _ in curation.gates(settled, now=self.NOW)])
+
+
+if __name__ == "__main__":
+    unittest.main()

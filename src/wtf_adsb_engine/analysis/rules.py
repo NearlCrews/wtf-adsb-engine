@@ -405,8 +405,10 @@ def identity_checks(a):
     Values are None when a check cannot be computed. An N-number registration
     that the US algorithm assigns to another address, a registration-style call
     sign that differs, or an allocation/nationality disagreement sets "conflict".
-    A registration disagreement that is only formatting or one trailing letter
-    (trivial_difference) stays False in its check but sets no conflict.
+    A call sign that differs from the registration only by formatting or one
+    trailing letter (trivial_difference), or a registration that differs from the
+    address's N-number only by formatting, stays False in its check but sets no
+    conflict.
     PIA and non-ICAO (~) addresses skip the algorithm. These checks compare
     database and broadcast fields; they never establish who operates the aircraft.
     Results are memoized on the identity fields, so call once per report.
@@ -516,9 +518,13 @@ def _compute_identity(a):
 _NON_ALPHANUMERIC = re.compile(r"[^A-Z0-9]")
 
 
+def _compact_identifier(value):
+    return _NON_ALPHANUMERIC.sub("", str(value or "").upper())
+
+
 def trivial_difference(a, b):
     """Two identifiers that differ only by formatting or one trailing letter."""
-    x, y = (_NON_ALPHANUMERIC.sub("", str(value or "").upper()) for value in (a, b))
+    x, y = _compact_identifier(a), _compact_identifier(b)
     if not x or not y:
         return False
     if x == y:
@@ -530,12 +536,15 @@ def trivial_difference(a, b):
 def _trivial_disagreements(registration, derived, callsign, registration_matches, callsign_matches):
     """Whether the registration and call sign disagreements are only trivial ones.
 
-    The registration is compared with the address's own N-number, the call sign
-    with the registration (or that N-number when no registration is listed). An
-    allocation and nationality disagreement is never trivial.
+    The registration is compared with the address's own N-number by formatting
+    only: N8447 and N8447L are different airframes with different addresses. The
+    call sign is compared with the registration (or that N-number when no
+    registration is listed) by trivial_difference, which also forgives one
+    trailing letter. An allocation and nationality disagreement is never trivial.
     """
+    compact = _compact_identifier(registration)
     return (
-        registration_matches is False and trivial_difference(registration, derived),
+        registration_matches is False and bool(compact) and compact == _compact_identifier(derived),
         callsign_matches is False and trivial_difference(callsign, registration or derived),
     )
 

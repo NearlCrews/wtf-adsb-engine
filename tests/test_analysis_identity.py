@@ -388,19 +388,27 @@ class TrivialConflicts(unittest.TestCase):
         checks = rules.identity_checks({"hex": self.ADDRESS, "r": "N8447L", "flight": "N8447", "t": "C172"})
         self.assertFalse(checks["callsign_matches_registration"])
         self.assertFalse(checks["conflict"])
-        # A database registration one trailing letter short of the address's own N-number.
-        checks = rules.identity_checks({"hex": self.ADDRESS, "r": "N8447", "t": "C172"})
-        self.assertFalse(checks["registration_matches_address"])
-        self.assertFalse(checks["conflict"])
         self.assertEqual(
-            rules.supplementary_candidates({"hex": self.ADDRESS, "r": "N8447", "t": "C172"}, 0), []
+            rules.supplementary_candidates({"hex": self.ADDRESS, "r": "N8447L", "flight": "N8447"}, 0), []
         )
+
+    def test_a_registration_one_letter_off_the_address_is_a_real_conflict(self):
+        # N8447 and N8447L are different airframes with different addresses.
+        a = {"hex": self.ADDRESS, "r": "N8447", "t": "C172"}
+        checks = rules.identity_checks(a)
+        self.assertFalse(checks["registration_matches_address"])
+        self.assertTrue(checks["conflict"])
+        (finding,) = [f for f in rules.supplementary_candidates(a, 0) if f.kind == "identity_conflict"]
+        self.assertIn("assigns this address to N8447L", finding.why)
 
     def test_real_disagreements_still_conflict_and_skip_the_trivial_reason(self):
         checks = rules.identity_checks({"hex": self.ADDRESS, "r": "N8447L", "flight": "N8448L"})
         self.assertTrue(checks["conflict"])
-        a = {"hex": self.ADDRESS, "r": "N8447", "flight": "N9999"}
-        self.assertTrue(rules.identity_checks(a)["conflict"])
+        # The registration conflict stands; the flight ID one letter past it gives no reason.
+        a = {"hex": self.ADDRESS, "r": "N8447", "flight": "N8447A"}
+        checks = rules.identity_checks(a)
+        self.assertFalse(checks["callsign_matches_registration"])
+        self.assertTrue(checks["conflict"])
         (finding,) = [f for f in rules.supplementary_candidates(a, 0) if f.kind == "identity_conflict"]
-        self.assertIn("N9999", finding.why)
-        self.assertNotIn("US address algorithm", finding.why)
+        self.assertIn("US address algorithm", finding.why)
+        self.assertNotIn("N8447A", finding.why)

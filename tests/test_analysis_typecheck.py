@@ -184,10 +184,6 @@ class UnregisteredRecheck(unittest.TestCase):
         self.assertEqual(self.addresses(), ["a1b2c3"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PendingOrder(unittest.TestCase):
     """The worker asks about the strongest, newest candidates first."""
 
@@ -209,3 +205,7 @@ class PendingOrder(unittest.TestCase):
                     app.record(db, aircraft, finding, first, last, hits=6)
                 found = [event["hex"] for event in typecheck.pending(db, since=0, now=NOW)]
         self.assertEqual(found, ["a00003", "a00002", "a00001"])
+
+
+if __name__ == "__main__":
+    unittest.main()

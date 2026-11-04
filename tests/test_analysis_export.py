@@ -583,5 +583,21 @@ class FrozenPackageTests(unittest.TestCase):
             self.assertIn("--workers", result.stdout)
 
 
+class ProjectionClockTests(unittest.TestCase):
+    def test_the_rebuilt_selection_dates_a_stale_type_check_by_the_export_time(self):
+        source = sample_source()
+        source.update(kind="watch_type", category="airframes", value=None, unit="")
+        del source["evidence"]["maneuver"]
+        source["evidence"]["aircraft"]["t"] = "B52"
+        held = export.project_source(source, now=NOW + 60)["selection"]
+        self.assertEqual(held["publication_hold"], "type_check_pending")
+        self.assertIn(
+            "The second-source type check has not completed; selection waits for it", held["reasons"]
+        )
+        stale = export.project_source(source, now=NOW + 40 * 86400)["selection"]
+        self.assertIsNone(stale["publication_hold"])
+        self.assertEqual((stale["reasons"], stale["blocking_rules"]), ([], []))
+
+
 if __name__ == "__main__":
     unittest.main()
