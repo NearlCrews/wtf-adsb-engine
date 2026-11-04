@@ -38,5 +38,14 @@ class PinnedReferenceTests(unittest.TestCase):
         self.assertTrue(source.closed)
 
 
+class OperatorDesignators(unittest.TestCase):
+    def test_known_designator_has_a_name(self):
+        self.assertEqual(reference.operator_name("DAL"), "Delta Air Lines")
+        self.assertIsNone(reference.operator_name("ZZZ"))
+        self.assertIsNone(reference.operator_name("dal"))
+        self.assertIsNone(reference.operator_name(""))
+        self.assertIsNone(reference.operator_name(None))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,7 @@ SHARED = (
     "src/wtf_adsb_engine/wire.py",
     "src/wtf_adsb_engine/analysis/kinds.py",
     "src/wtf_adsb_engine/analysis/enrichment_rules.py",
+    "src/wtf_adsb_engine/analysis/data/airline_designators.json",
     *(f"src/wtf_adsb_engine/contracts/{name}" for name in SCHEMAS),
     *(f"contracts/{name}" for name in SCHEMAS),
 )

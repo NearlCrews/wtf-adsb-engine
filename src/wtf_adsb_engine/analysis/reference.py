@@ -19,6 +19,9 @@ from itertools import pairwise
 from pathlib import Path
 
 DATA = Path(os.getenv("WTF_ADSB_REFERENCE_DIR", str(Path(__file__).resolve().parent / "data")))
+# Shared with the publisher byte for byte; always the packaged copy, never a redirected bundle.
+OPERATOR_NAMES = Path(__file__).resolve().parent / "data" / "airline_designators.json"
+OPERATOR_CODE = re.compile(r"[A-Z]{3}")
 # Reviewed file hashes. Replacement reference bundles must match these pins;
 # see docs/reference-data.md for source terms and update requirements.
 FILES = {
@@ -189,7 +192,7 @@ def clear_cache():
     GENERATION changes so that callers memoizing derived results recompute them.
     """
     global GENERATION
-    for function in (_load, _type_sets, _identity, _beacon_codes, _variants, _limits):
+    for function in (_load, _type_sets, _identity, _beacon_codes, _variants, _limits, _operator_names):
         function.cache_clear()
     _FAILED.clear()
     GENERATION += 1
@@ -547,6 +550,22 @@ def operator_designator(code):
     if tables is None:
         return None
     return clean(code) in tables["operators"]
+
+
+@lru_cache(maxsize=None)
+@_fail_soft()
+def _operator_names():
+    data = pinned_json(OPERATOR_NAMES)
+    return {code: entry["name"] for code, entry in data["designators"].items()}
+
+
+@_fail_soft()
+def operator_name(code):
+    """The operator name for a three-letter ICAO designator; None when unknown, malformed, or unavailable."""
+    if not isinstance(code, str) or not OPERATOR_CODE.fullmatch(code):
+        return None
+    names = _operator_names()
+    return names.get(code) if names else None
 
 
 @lru_cache(maxsize=None)
