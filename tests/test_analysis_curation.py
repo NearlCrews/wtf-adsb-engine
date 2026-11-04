@@ -412,6 +412,19 @@ class OperatorFirsts(unittest.TestCase):
             self.assertEqual(curation.facts(event)["subtopic"], "operator:DAL")
         self.assertEqual(curation.facts(finding(3, "first_type_here"))["subtopic"], "type:C172")
 
+    def test_without_a_designator_the_airframe_keys_the_first(self):
+        # No block and a non-airline callsign: the address keys it, so two such firsts never share a subtopic.
+        first = operator_first(1, "DAL", address="aaaaaa")
+        del first["evidence"]["first_sighting"]
+        first["evidence"]["aircraft"]["flight"] = "N123AB"
+        self.assertEqual(curation.facts(first)["subtopic"], "aircraft:aaaaaa")
+        history = [curation.story_entry(curation.choose([group(first)])["selected"][0])]
+        second = operator_first(2, "DAL", day=40, address="bbbbbb")
+        del second["evidence"]["first_sighting"]
+        second["evidence"]["aircraft"]["flight"] = "N456CD"
+        row = curation.choose([group(second)], history=history)["decisions"][0]
+        self.assertEqual(row["disposition"], "selected")
+
     def test_only_a_second_first_for_the_same_designator_repeats(self):
         earlier = curation.choose([group(operator_first(1, "DAL", address="aaaaaa"))])
         history = [curation.story_entry(earlier["selected"][0])]

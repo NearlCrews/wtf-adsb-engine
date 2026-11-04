@@ -744,7 +744,7 @@ REPEAT_RULES = (
         lambda row, other, routine: other["kind"] == "notable_variant",
         VARIANT_COOLDOWN,
     ),
-    # A second "first" of one type or allocation State would be false.
+    # A second "first" of one type, allocation State, or operator would be false.
     ("first_repeat", "subtopic", FIRST_KINDS, lambda row, other, routine: other["kind"] == row["kind"], None),
     ("series_repeat", "series", None, lambda row, other, routine: True, SERIES_COOLDOWN),
 )
