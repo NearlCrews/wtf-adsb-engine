@@ -373,3 +373,34 @@ class UnregisteredAddress(unittest.TestCase):
         # The packaged tests carry no identity tables; the lookup stands in for the US military range.
         with patch.object(reference, "military_allocation", side_effect={"ae1234"}.__contains__):
             self.assertNotIn("unregistered_address", self.kinds_of({**base, "hex": "ae1234"}))
+
+
+class TrivialConflicts(unittest.TestCase):
+    # The US algorithm assigns ab920d to N8447L; the packaged tests need no identity tables.
+    ADDRESS = "ab920d"
+
+    def test_trailing_letter_and_formatting_are_not_conflicts(self):
+        self.assertTrue(rules.trivial_difference("N8447L", "N8447"))
+        self.assertTrue(rules.trivial_difference("C-FASQ", "CFASQ"))
+        self.assertFalse(rules.trivial_difference("N8447L", "N8448L"))
+        self.assertFalse(rules.trivial_difference("N84471", "N8447"))
+        self.assertFalse(rules.trivial_difference("", "N8447"))
+        checks = rules.identity_checks({"hex": self.ADDRESS, "r": "N8447L", "flight": "N8447", "t": "C172"})
+        self.assertFalse(checks["callsign_matches_registration"])
+        self.assertFalse(checks["conflict"])
+        # A database registration one trailing letter short of the address's own N-number.
+        checks = rules.identity_checks({"hex": self.ADDRESS, "r": "N8447", "t": "C172"})
+        self.assertFalse(checks["registration_matches_address"])
+        self.assertFalse(checks["conflict"])
+        self.assertEqual(
+            rules.supplementary_candidates({"hex": self.ADDRESS, "r": "N8447", "t": "C172"}, 0), []
+        )
+
+    def test_real_disagreements_still_conflict_and_skip_the_trivial_reason(self):
+        checks = rules.identity_checks({"hex": self.ADDRESS, "r": "N8447L", "flight": "N8448L"})
+        self.assertTrue(checks["conflict"])
+        a = {"hex": self.ADDRESS, "r": "N8447", "flight": "N9999"}
+        self.assertTrue(rules.identity_checks(a)["conflict"])
+        (finding,) = [f for f in rules.supplementary_candidates(a, 0) if f.kind == "identity_conflict"]
+        self.assertIn("N9999", finding.why)
+        self.assertNotIn("US address algorithm", finding.why)

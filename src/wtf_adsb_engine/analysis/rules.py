@@ -405,6 +405,8 @@ def identity_checks(a):
     Values are None when a check cannot be computed. An N-number registration
     that the US algorithm assigns to another address, a registration-style call
     sign that differs, or an allocation/nationality disagreement sets "conflict".
+    A registration disagreement that is only formatting or one trailing letter
+    (trivial_difference) stays False in its check but sets no conflict.
     PIA and non-ICAO (~) addresses skip the algorithm. These checks compare
     database and broadcast fields; they never establish who operates the aircraft.
     Results are memoized on the identity fields, so call once per report.
@@ -489,6 +491,9 @@ def _compute_identity(a):
 
     year = number(a.get("year"))
     earliest = reference.earliest_year(typecode) if typecode else None
+    registration_trivial, callsign_trivial = _trivial_disagreements(
+        registration, us_registration, callsign_registration, registration_matches, callsign_matches
+    )
     return {
         "us_registration_from_address": us_registration,
         "registration_matches_address": registration_matches,
@@ -502,10 +507,37 @@ def _compute_identity(a):
         # Additional to the shared contract: a database year before the type's
         # earliest plausible year. It suppresses vintage but is not a conflict.
         "year_plausible": None if year is None or earliest is None else year >= earliest,
-        "conflict": any(
-            value is False for value in (registration_matches, callsign_matches, allocation_matches)
-        ),
+        "conflict": (registration_matches is False and not registration_trivial)
+        or (callsign_matches is False and not callsign_trivial)
+        or allocation_matches is False,
     }
+
+
+_NON_ALPHANUMERIC = re.compile(r"[^A-Z0-9]")
+
+
+def trivial_difference(a, b):
+    """Two identifiers that differ only by formatting or one trailing letter."""
+    x, y = (_NON_ALPHANUMERIC.sub("", str(value or "").upper()) for value in (a, b))
+    if not x or not y:
+        return False
+    if x == y:
+        return True
+    longer, shorter = (x, y) if len(x) > len(y) else (y, x)
+    return len(longer) == len(shorter) + 1 and longer.startswith(shorter) and longer[-1].isalpha()
+
+
+def _trivial_disagreements(registration, derived, callsign, registration_matches, callsign_matches):
+    """Whether the registration and call sign disagreements are only trivial ones.
+
+    The registration is compared with the address's own N-number, the call sign
+    with the registration (or that N-number when no registration is listed). An
+    allocation and nationality disagreement is never trivial.
+    """
+    return (
+        registration_matches is False and trivial_difference(registration, derived),
+        callsign_matches is False and trivial_difference(callsign, registration or derived),
+    )
 
 
 def performance_context(aircraft):
@@ -1206,18 +1238,28 @@ def _rated_speed(a, gs, alt, entry, tas):
     )
 
 
-def _conflict_reasons(checks):
-    """Readable reasons for an identity conflict; tolerates partial precomputed checks."""
+def _conflict_reasons(checks, aircraft=None):
+    """Readable reasons for an identity conflict; tolerates partial precomputed checks.
+
+    A trivial disagreement (trivial_difference) gives no reason.
+    """
     reasons = []
-    if checks.get("registration_matches_address") is False:
-        derived = checks.get("us_registration_from_address")
+    derived = checks.get("us_registration_from_address")
+    callsign = checks.get("callsign_registration")
+    registration_trivial, callsign_trivial = _trivial_disagreements(
+        parse_registration((aircraft or {}).get("r"))[0],
+        derived,
+        callsign,
+        checks.get("registration_matches_address"),
+        checks.get("callsign_matches_registration"),
+    )
+    if checks.get("registration_matches_address") is False and not registration_trivial:
         reasons.append(
             f"The US address algorithm assigns this address to {derived}, but the aircraft database lists a different registration."
             if derived
             else "The aircraft database lists a US registration that the US address algorithm assigns to a different address."
         )
-    callsign = checks.get("callsign_registration")
-    if checks.get("callsign_matches_registration") is False and callsign:
+    if checks.get("callsign_matches_registration") is False and callsign and not callsign_trivial:
         reasons.append(
             f"The broadcast flight ID {callsign} looks like a registration that differs from this aircraft's registration."
         )
@@ -1321,7 +1363,7 @@ def supplementary_candidates(a, now, *, identity=None):
     checks = identity if isinstance(identity, dict) else identity_checks(a)
     findings = []
     if checks.get("conflict") is True:
-        reasons = _conflict_reasons(checks)
+        reasons = _conflict_reasons(checks, a)
         findings.append(
             Finding(
                 "identity_conflict",

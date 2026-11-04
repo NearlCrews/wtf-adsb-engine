@@ -436,6 +436,20 @@ class TcasTests(unittest.TestCase):
                 info = self.episode(reports, own, threat).evidence["maneuver"]
                 self.assertIn(flag, info["quality_flags"])
 
+    def test_only_mode_s_reply_advisories_are_experimental(self):
+        for df in (17, 18):
+            with self.subTest(df=df):
+                info = self.episode([advisory(0, df=df), advisory(5, df=df)]).evidence["maneuver"]
+                self.assertNotIn("acas_decoder_experimental", info["quality_flags"])
+        for reports in ([advisory(0, df=16), advisory(5, df=16)], [advisory(0), advisory(5, df=0)]):
+            with self.subTest(reports=[m["df_type"] for m in reports]):
+                info = self.episode(reports).evidence["maneuver"]
+                self.assertIn("acas_decoder_experimental", info["quality_flags"])
+        # A DF17 advisory without the threat's track stays blocked, but not as experimental.
+        info = self.episode([advisory(0), advisory(5)], threat=[]).evidence["maneuver"]
+        self.assertIn("threat_track_missing", info["quality_flags"])
+        self.assertNotIn("acas_decoder_experimental", info["quality_flags"])
+
     def test_poor_fixes_on_either_track_mark_the_separation_but_keep_the_advisory(self):
         reports = [advisory(0), advisory(5), advisory(31, "Clear of Conflict", rat=1)]
         poor = {

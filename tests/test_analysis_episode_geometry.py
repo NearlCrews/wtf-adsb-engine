@@ -287,6 +287,15 @@ class AirportContextTests(unittest.TestCase):
             spiral = next(f for f in maneuvers.analyze(points, LIGHT) if f.kind == "descending_spiral")
         self.assertIn("airport_context_unavailable", spiral.evidence["maneuver"]["quality_flags"])
 
+    def test_go_around_is_an_airport_hypothesis_tag_not_a_blocking_flag(self):
+        track = Track(x=-4.5, altitude=2000, speed=100).straight(150, rate=-700).straight(150, rate=1500)
+        with runways(runway_at(0, 0)):
+            finding = maneuvers.go_around(sample(track))
+        info = finding.evidence["maneuver"]
+        self.assertEqual(finding.kind, "possible_go_around")
+        self.assertIn("airport_maneuver_hypothesis", info["context_tags"])
+        self.assertNotIn("airport_maneuver_hypothesis", info["quality_flags"])
+
     def test_runway_circuits_fold_holding_and_oscillation_into_the_circling_episode(self):
         track = Track(x=-0.4, altitude=900, speed=80)
         for _ in range(5):

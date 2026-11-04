@@ -147,6 +147,7 @@ CONTEXT_TAGS = frozenset(
         "tanker_type",
         "military_flag",
         "airport_context",
+        "airport_maneuver_hypothesis",
     }
 )
 # Archived fields have unknown freshness: a blocking flag, except for shapes the
@@ -1857,7 +1858,7 @@ def go_around(points):
         heights[-1] - heights[floor],
         "ft regained",
         fields=("lat", "lon", ref),
-        flags=("airport_maneuver_hypothesis",),
+        tags=("airport_maneuver_hypothesis",),
         altitude_excursion_ft=heights[-1] - heights[floor],
         altitude_reference=ref,
     )
