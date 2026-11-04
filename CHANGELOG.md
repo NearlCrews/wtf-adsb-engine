@@ -30,9 +30,13 @@ and evidence contract versions are tracked separately.
 - Rapid climb and descent findings record `threshold_fpm`,
   `qualifying_seconds_required`, and `qualifying_reports_required`, and
   seasonal speed records record `margin_kn`.
+- Participants of formation and TCAS findings carry their own track.
 
 ### Fixed
 
+- TCAS findings export drawable media parts. The parts now come from the first
+  sample list that holds positions, so the context samples supply them when the
+  maneuver samples are positionless advisory reports.
 - Continuous collection no longer fails a poll with "database is locked" when
   enrichment writes the journal at the same moment. The collector now takes the
   journal's write lock before it reads, so it waits for another writer instead

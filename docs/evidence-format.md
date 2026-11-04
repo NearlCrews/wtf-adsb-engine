@@ -68,7 +68,7 @@ The collection observation has these fields:
 | --- | --- |
 | `group` | Stable group UUID, observation interval and an array of projected findings |
 | `context` | Bounded novelty counts, the named compatibility policy profile, and, since 1.1.0, per-finding type norms |
-| `media` | Aircraft track parts keyed by finding UUID, with timestamped positions and available altitude/speed references |
+| `media` | Aircraft track parts keyed by finding UUID, with timestamped positions and available altitude/speed references. The parts come from the first of `maneuver_samples`, `pattern_samples`, `track`, and `context_samples` that holds positions, so a TCAS finding is drawn from its context samples |
 | `extensions` | Optional namespaced, versioned payloads approved by local schema configuration |
 
 Findings retain their kind, interval, evidence, available aircraft identity,
@@ -244,6 +244,21 @@ and 4 reports. A descent holding 7,000 ft/min for 30 s and 4 reports is confirme
 as exceptional. The `season_record` block adds `margin_kn`, the amount by which
 the speed beat the previous maximum. A go-around carries
 `airport_maneuver_hypothesis` as a context tag.
+
+### Participants
+
+A multi-aircraft finding lists the other aircraft in `participants`, at most 12,
+never including the primary aircraft. Each entry is built from this allowlist:
+
+| Field | Content |
+| --- | --- |
+| `hex` | The participant's ICAO address |
+| `role` | `threat`, `lead`, `wingman`, or `member` |
+| `registration`, `callsign`, `type` | Identity from the participant's aircraft record, when known |
+| `source` | The participant's position source |
+| `measurements` | Numeric readings and separations, such as `min_separation_nm` and `vertical_separation_ft` |
+| `quality_flags` | Optional review flags for the participant's reports |
+| `track` | Optional. The participant's own positions, oldest first, at most 96: `ts`, `lat`, `lon`, `source`, and `alt_baro`, `alt_geom`, and `gs` when reported. A formation member's track holds its reports matched in the formation; a TCAS threat's track covers 30 s before the first advisory message to 30 s after the last. No receiver-relative field is kept. |
 
 ## Identity, persistence and bounds
 

@@ -245,6 +245,22 @@ class ProjectionTests(unittest.TestCase):
         other = {**block, "wind_250_hpa": {**block["wind_250_hpa"], "source": "nws"}}
         self.assertNotIn("source", export.EVIDENCE({"winds_aloft": other})["winds_aloft"]["wind_250_hpa"])
 
+    def test_a_participant_track_survives_projection_without_receiver_fields(self):
+        point = {
+            "ts": 1793880000.0,
+            "lat": 40.1,
+            "lon": -74.2,
+            "alt_baro": 5200,
+            "gs": 200.0,
+            "source": "adsb_icao",
+        }
+        member = {"hex": "a00002", "role": "member", "track": [{**point, "r_dst": 4.4, "rssi": -9.5}]}
+        projected = export.EVIDENCE({"participants": [member]})
+        self.assertEqual(projected["participants"][0]["track"], [point])
+        self.assertEqual(stories.participants(projected)[0]["track"], [point])
+        self.assertEqual(stories.participants({"participants": [member]})[0]["track"], [point])
+        self.assertNotIn("track", stories.participants({"participants": [{**member, "track": None}]})[0])
+
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
         source["kind"] = "vfr_code_above_fl180"
@@ -264,6 +280,23 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(len(parts), 3)
         self.assertEqual(parts[0][0]["altitude_reference"], "unspecified")
         self.assertEqual(sum(map(len, parts)), 7)
+
+    def test_tcas_media_falls_back_to_positioned_context_samples(self):
+        source = export.project_source(sample_source())
+        evidence = source["evidence"]
+        evidence.pop("track", None)
+        evidence["maneuver_samples"] = [{"ts": NOW + t, "source": "adsb_icao"} for t in (0, 5, 31)]
+        evidence["context_samples"] = [
+            {"ts": NOW + t, "lat": 40.0 + t / 1000, "lon": -74.0, "alt_baro": 31000, "source": "adsb_icao"}
+            for t in range(0, 61, 10)
+        ]
+        source["kind"] = "tcas_ra"
+        parts = export.media_parts(source)
+        self.assertEqual(sum(map(len, parts)), 7)
+        self.assertEqual(parts[0][0]["lat"], 40.0)
+        self.assertEqual(parts[0][0]["altitude_reference"], "barometric")
+        evidence["context_samples"][0]["r_dst"] = 4.4
+        self.assertNotIn("r_dst", export.media_parts(source)[0][0])
 
 
 class NativeTests(unittest.TestCase):

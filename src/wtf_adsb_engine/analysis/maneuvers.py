@@ -22,6 +22,7 @@ from .rules import (
     Finding,
     distance_nm,
     movement_patterns,
+    null_island,
     number,
     orbit_verdict,
     rotorcraft,
@@ -2404,8 +2405,34 @@ def gnss_integrity_loss(points):
 # Multi-aircraft helpers. The collector holds every address; these stay pure.
 
 
-def participant(address, role, *, aircraft=None, source=None, measurements=None):
-    """One entry of ``evidence["participants"]``; the primary aircraft is never listed."""
+# The keys a participant's track point keeps: the aircraft's own position and readings.
+# Receiver-relative fields (telemetry.RECEIVER_FIELDS) and everything else are dropped.
+TRACK_FIELDS = ("ts", "lat", "lon", "alt_baro", "alt_geom", "gs")
+
+
+def participant_track(points):
+    """A participant's positions, oldest first, one per time, bounded like the
+    finding's own samples. Only TRACK_FIELDS and the source are copied."""
+    by_time = {}
+    for p in points:
+        lat, lon, stamp = number(p.get("lat")), number(p.get("lon")), number(p.get("ts"))
+        if (
+            None in (lat, lon, stamp)
+            or not (-90 <= lat <= 90 and -180 <= lon <= 180)
+            or null_island(lat, lon)
+        ):
+            continue
+        point = {key: p[key] for key in TRACK_FIELDS if p.get(key) is not None}
+        point.update(ts=stamp, lat=lat, lon=lon, source=p.get("source") or "unknown")
+        by_time[stamp] = point
+    return bounded_samples([by_time[stamp] for stamp in sorted(by_time)])
+
+
+def participant(address, role, *, aircraft=None, source=None, measurements=None, track=None):
+    """One entry of ``evidence["participants"]``; the primary aircraft is never listed.
+
+    ``track`` is the participant's own reports; their positions are kept under
+    ``"track"`` (see participant_track) when any remain."""
     meta = aircraft or {}
     entry = {
         "hex": address,
@@ -2418,6 +2445,8 @@ def participant(address, role, *, aircraft=None, source=None, measurements=None)
     for key, name in (("r", "registration"), ("t", "type"), ("flight", "callsign")):
         if isinstance(meta.get(key), str) and meta[key].strip():
             entry[name] = meta[key].strip()
+    if track is not None and (points := participant_track(track)):
+        entry["track"] = points
     return entry
 
 
@@ -2836,6 +2865,7 @@ def formation_findings(pairs, aircraft=None, *, archive=None):
                 aircraft=meta.get(address),
                 source=sources.get(address),
                 measurements=_pair_measurements(address, members, primary),
+                track=[p for pair in members if address in pair["hexes"] for p in pair["samples"][address]],
             )
             for address in others[:MAX_PARTICIPANTS]
         ]
@@ -3121,6 +3151,13 @@ def tcas_episode(acas_reports, own_points, threat_points=(), *, own, threat=None
                     for key in ("min_separation_nm", "vertical_separation_ft")
                     if key in metrics
                 },
+                # The threat over the same span as the context samples: the advisory and
+                # the response windows around it.
+                track=[
+                    p
+                    for p in threat_points
+                    if (stamp := number(p.get("ts"))) is not None and first - 30 <= stamp <= last + 30
+                ],
             )
         ]
     return finding

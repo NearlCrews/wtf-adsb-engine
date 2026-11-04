@@ -56,6 +56,19 @@ class FormationTests(unittest.TestCase):
         self.assertEqual([p["hex"] for p in finding.evidence["participants"]], ["a00002"])
         self.assertEqual(finding.evidence["participants"][0]["role"], "member")
 
+    def test_each_participant_carries_its_own_track(self):
+        primary, second = flight(r_dst=4.2), flight(offset_y=0.2, altitude=5200, r_dst=4.4, rssi=-9.5)
+        finding = self.findings({"a00001": primary, "a00002": second})[0][1]
+        track = finding.evidence["participants"][0]["track"]
+        self.assertGreaterEqual(len(track), 8)
+        self.assertLessEqual(len(track), 96)
+        self.assertLessEqual({p["lat"] for p in track}, {p["lat"] for p in second})
+        self.assertFalse({p["lat"] for p in track} & {p["lat"] for p in primary})
+        self.assertEqual({p["alt_baro"] for p in track}, {5200})
+        for point in track:
+            self.assertLessEqual(set(point), {"ts", "lat", "lon", "alt_baro", "alt_geom", "gs", "source"})
+            self.assertEqual(point["source"], "adsb_icao")
+
     def test_uncertain_distant_brief_or_anonymous_pairs_are_ignored(self):
         cases = {
             "mlat": {"a00001": flight(), "a00002": flight(offset_y=0.2, source="mlat")},
@@ -412,6 +425,21 @@ class TcasTests(unittest.TestCase):
         self.assertEqual(finding.evidence["participants"][0]["role"], "threat")
         self.assertEqual(finding.evidence["participants"][0]["hex"], "a00002")
         self.assertNotIn("bytes", str(finding.evidence))
+
+    def test_the_threat_participant_carries_its_track_over_the_advisory(self):
+        threat = [{**p, "r_dst": 3.1, "r_dir": 45.0} for p in THREAT]
+        finding = self.episode(
+            [advisory(0), advisory(5), advisory(31, "Clear of Conflict", rat=1)], threat=threat
+        )
+        track = finding.evidence["participants"][0]["track"]
+        self.assertEqual([p["ts"] for p in track], [p["ts"] for p in THREAT if T0 - 30 <= p["ts"] <= T0 + 61])
+        self.assertEqual(
+            [p["lat"] for p in track], [p["lat"] for p in THREAT if T0 - 30 <= p["ts"] <= T0 + 61]
+        )
+        self.assertEqual({p["alt_baro"] for p in track}, {31000})
+        self.assertFalse({"r_dst", "r_dir"} & {key for p in track for key in p})
+        missing = self.episode([advisory(0), advisory(5)], threat=[])
+        self.assertNotIn("track", missing.evidence["participants"][0])
 
     def test_single_message_or_ground_does_not_confirm(self):
         self.assertFalse(self.episode([advisory(0)]).evidence["maneuver"]["confirmed"])

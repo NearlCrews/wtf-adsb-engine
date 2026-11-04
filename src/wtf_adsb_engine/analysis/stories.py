@@ -724,6 +724,30 @@ def type_check(evidence, kind=None):
     return found
 
 
+def participant_track(raw):
+    """A participant's own positions: timestamp, coordinates, the altitude and speed
+    readings, and the source. Any other key, receiver-relative ones included, is dropped."""
+    if not isinstance(raw, list) or len(raw) > 200:
+        return []
+    track = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        stamp, lat, lon = (number(item.get(key)) for key in ("ts", "lat", "lon"))
+        if stamp is None or lat is None or lon is None or not -90 <= lat <= 90 or not -180 <= lon <= 180:
+            continue
+        source = item.get("source")
+        point = {"ts": stamp, "lat": lat, "lon": lon}
+        for key in ("alt_baro", "alt_geom", "gs"):
+            if key == "alt_baro" and item.get(key) == "ground":
+                point[key] = "ground"
+            elif (value := number(item.get(key))) is not None:
+                point[key] = value
+        point["source"] = source if isinstance(source, str) and source in SOURCES else "unknown"
+        track.append(point)
+    return track
+
+
 def participants(evidence, primary=None):
     """Other aircraft in a multi-aircraft episode, using the primary identity allowlist."""
     raw = evidence.get("participants")
@@ -762,6 +786,8 @@ def participants(evidence, primary=None):
                 "measurements": values,
             }
         )
+        if track := participant_track(item.get("track")):
+            result[-1]["track"] = track
     result.sort(key=lambda item: (PARTICIPANT_ROLES.index(item["role"]), item["icao_address"] or "~"))
     return result[:12]
 

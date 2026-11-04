@@ -256,6 +256,7 @@ PARTICIPANT = _object(
             {key: _numeric for key in set(episode_evidence.PARTICIPANT_MEASUREMENTS) | POINT_NUMBERS}
         ),
         "quality_flags": FLAGS,
+        "track": _array(POINT, MAX_POINTS),
     }
 )
 METRIC_TIMES = frozenset(
@@ -702,10 +703,25 @@ def _point_media(raw):
     }
 
 
+def _positioned(points):
+    return isinstance(points, list) and any(
+        isinstance(p, dict) and number(p.get("lat")) is not None and number(p.get("lon")) is not None
+        for p in points
+    )
+
+
 def media_parts(source):
+    """The drawn track parts: the first sample list that holds positions. A TCAS
+    finding's maneuver samples are positionless advisory reports, so its context
+    samples supply the map."""
     evidence = source["evidence"]
-    points = (
-        evidence.get("maneuver_samples") or evidence.get("pattern_samples") or evidence.get("track") or []
+    points = next(
+        (
+            found
+            for key in ("maneuver_samples", "pattern_samples", "track", "context_samples")
+            if _positioned(found := evidence.get(key))
+        ),
+        [],
     )
     window = [
         point
