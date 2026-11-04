@@ -337,19 +337,33 @@ def available():
     return True
 
 
-def nearby(point, radius=3):
-    lat, lon = number(point.get("lat")), number(point.get("lon"))
-    if lat is None or lon is None or not available():
+def runways_near(lat, lon, radius):
+    """The runways filed in the index cells a circle of ``radius`` NM around (lat, lon)
+    can reach; [] when the runway table is unavailable.
+
+    Runways are filed by the whole degree of their center (runway_index). A degree
+    of latitude is 60 NM, and a degree of longitude 60 NM times the cosine of the
+    latitude, so enough cells each way cover the radius.
+    """
+    if not available():
         return []
-    matches = []
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            for runway in runway_index().get((math.floor(lat) + dy, math.floor(lon) + dx), []):
-                a, b = runway["ends"]
-                center = ((a[1] + b[1]) / 2, (a[0] + b[0]) / 2)
-                if distance_nm((lat, lon), center) <= radius:
-                    matches.append(runway)
-    return matches
+    rows = max(1, math.ceil(radius / 60))
+    columns = min(180, max(1, math.ceil(radius / max(60 * math.cos(math.radians(lat)), 1.0))))
+    index = runway_index()
+    return [
+        runway
+        for dy in range(-rows, rows + 1)
+        for dx in range(-columns, columns + 1)
+        for runway in index.get((math.floor(lat) + dy, math.floor(lon) + dx), ())
+    ]
+
+
+def nearby(point, radius=3):
+    """Runways whose center lies within ``radius`` NM of a report."""
+    lat, lon = number(point.get("lat")), number(point.get("lon"))
+    if lat is None or lon is None:
+        return []
+    return [runway for runway in runways_near(lat, lon, radius) if runway_distance(point, runway) <= radius]
 
 
 def runway_distance(point, runway):

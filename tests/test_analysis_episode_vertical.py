@@ -338,10 +338,6 @@ class DescentBands(unittest.TestCase):
         for key in keys:
             self.assertIn(key, maneuvers.METRICS)
 
-    def test_an_explicit_threshold_keeps_the_flat_rule(self):
-        info = maneuvers.vertical(descent_points(20000, -5200, 45), 4500)[0].evidence["maneuver"]
-        self.assertEqual((info["threshold_fpm"], info["qualifying_seconds_required"]), (4500, 30))
-
 
 if __name__ == "__main__":
     unittest.main()

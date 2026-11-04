@@ -749,12 +749,19 @@ class AerobaticPractice(unittest.TestCase):
         rate = maneuvers._max_turn_rate(sample(track, period=1.0))
         self.assertGreater(rate, 10.0)
 
+    def test_an_ineligible_aircraft_is_not_measured(self):
+        points, _ = self.sawtooth()
+        heavy = {"hex": "a1b2c3", "t": "C172", "category": "A3"}
+        with patch.object(maneuvers, "altitude_series", side_effect=AssertionError("measured")):
+            self.assertIsNone(maneuvers.aerobatic(points, heavy))
+
     def test_small_reversals_do_not_count(self):
         points, aircraft = self.sawtooth(amplitude=600)
         self.assertNotIn("aerobatic_practice", {f.kind for f in maneuvers.trajectory(points, aircraft)})
 
     def test_pinned_type_table_keeps_only_listed_designators(self):
         listed = {"PTS2": {"designator": "PTS2"}}
+        self.addCleanup(maneuvers.reference.clear_cache)
         with (
             patch.object(maneuvers.reference, "GENERATION", -1),
             patch.object(maneuvers.reference, "dataset", return_value={"types": {}}),

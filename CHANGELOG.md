@@ -65,10 +65,10 @@ and evidence contract versions are tracked separately.
   own.
 - `identity_conflict` has a fixed score of 70 (was 78), and `holding_stack`
   has a fixed score of 78.
-- Live rated readings within their limit and live spotting readings below the
-  applied threshold are no longer journaled. The hourly prune deletes such live
-  rows, including rated rows later settled as within the limit, once last seen
-  more than 7 days ago. Archive and replay rows are kept.
+- Live spotting readings below the applied threshold are no longer journaled.
+  The hourly prune deletes such live rows, and live rated rows the wind worker
+  settled as within the limit, once last seen more than 7 days ago. Archive and
+  replay rows are kept.
 - A second-source type check still pending or failed 30 days after the first
   sighting counts as unavailable, so it no longer holds selection; an
   `unregistered_address` check never does. The export dates this by its own

@@ -41,20 +41,31 @@ from .telemetry import (
 
 VERSION = "maneuvers-v4"
 HIGH_RATE_FPM = 7000
-# Rapid-descent rules by starting pressure altitude, highest floor first, as
-# (floor_ft, threshold_fpm, seconds, reports): the rate a run of consecutive
-# reports must hold, and how long and how many reports that run needs. Ordinary
+
+
+class Rule(NamedTuple):
+    """A vertical-rate rule: from ``floor_ft`` of starting pressure altitude, a run of
+    consecutive reports at ``threshold_fpm`` or faster, lasting ``seconds`` over at
+    least ``reports`` reports."""
+
+    floor_ft: float
+    threshold_fpm: float
+    seconds: float
+    reports: int
+
+
+# Rapid-descent rules by starting pressure altitude, highest floor first. Ordinary
 # descents from 10,000 ft or higher reach higher rates, so they need a faster,
 # longer run.
-DESCENT_BANDS = ((10000, 6000, 60, 6), (0, 4500, 30, 4))
-# Climbs, and any caller's explicit threshold, keep one rule in the same shape.
-CLIMB_RULE = (0, 4500, 30, 4)
+DESCENT_BANDS = (Rule(10000, 6000, 60, 6), Rule(0, 4500, 30, 4))
+# Climbs keep one rule.
+CLIMB_RULE = Rule(0, 4500, 30, 4)
 # The exceptional descent window (curation.exceptional): it also confirms a
 # descent whose altitude band asks for more, so no band demotes such a descent.
-HIGH_RATE_RULE = (0, HIGH_RATE_FPM, 30, 4)
+HIGH_RATE_RULE = Rule(0, HIGH_RATE_FPM, 30, 4)
 # Reports at or beyond the lowest rule's rate open and hold a vertical episode;
 # each finding then applies its own rule.
-EPISODE_FPM = min(rule[1] for rule in (*DESCENT_BANDS, CLIMB_RULE))
+EPISODE_FPM = min(rule.threshold_fpm for rule in (*DESCENT_BANDS, CLIMB_RULE))
 EXTREME_RATE_FPM = 12000
 RATE_CONFLICT_FPM = 1500
 # Transponder codes stay one episode across report gaps of up to a minute.
@@ -424,16 +435,10 @@ def _nearest_runway_nm(point, radius=RACETRACK_RUNWAY_CAP_NM):
     scale = longitude_scale(lat)
     if min((lat - south) * 60, (north - lat) * 60, (lon - west) * scale, (east - lon) * scale) < radius:
         return None
-    index = airport_context.runway_index()
-    # Runways are filed by the whole degree of their center; a degree of latitude
-    # is 60 NM, so one cell each way covers the radius north and south.
-    across = min(180, math.ceil(radius / max(scale, 1.0)))
     nearest = radius
-    for dy in (-1, 0, 1):
-        for dx in range(-across, across + 1):
-            for runway in index.get((math.floor(lat) + dy, math.floor(lon) + dx), ()):
-                for end_lon, end_lat in runway["ends"]:
-                    nearest = min(nearest, distance_nm((lat, lon), (end_lat, end_lon)))
+    for runway in airport_context.runways_near(lat, lon, radius):
+        for end_lon, end_lat in runway["ends"]:
+            nearest = min(nearest, distance_nm((lat, lon), (end_lat, end_lon)))
     return nearest
 
 
@@ -539,38 +544,34 @@ def _corroborated(pairs):
 
 
 def descent_rule(start_altitude_ft):
-    """(floor_ft, threshold_fpm, seconds, reports) for a descent starting at this pressure altitude."""
+    """The DESCENT_BANDS rule for a descent starting at this pressure altitude."""
     for band in DESCENT_BANDS:
-        if (start_altitude_ft or 0) >= band[0]:
+        if (start_altitude_ft or 0) >= band.floor_ft:
             return band
     return DESCENT_BANDS[-1]
 
 
-def _vertical_rule(pairs, direction, start_altitude_ft, threshold=None):
-    """(threshold_fpm, seconds, reports) one episode is judged by.
+def _vertical_rule(pairs, direction, start_altitude_ft):
+    """(rule, run) one episode is judged by, with the rule's chosen run (_rate_run).
 
-    An explicit threshold keeps the flat 30 s and 4-report window, and a climb
-    takes CLIMB_RULE. A descent takes the band of its start altitude; when the
-    band's run does not hold over ``pairs`` (the usable (point, rate) reports)
-    but HIGH_RATE_RULE's does, it takes HIGH_RATE_RULE instead.
+    A climb takes CLIMB_RULE. A descent takes the band of its start altitude;
+    when the band's run does not hold over ``pairs`` (the usable (point, rate)
+    reports) but HIGH_RATE_RULE's does, it takes HIGH_RATE_RULE instead.
     """
-    if threshold is not None:
-        return threshold, CLIMB_RULE[2], CLIMB_RULE[3]
-    if direction > 0:
-        return CLIMB_RULE[1:]
-    band = descent_rule(start_altitude_ft)[1:]
-    for rule in (band, HIGH_RATE_RULE[1:]):
-        if _holds(_rate_run(pairs, direction, *rule), *rule[1:]):
-            return rule
-    return band
+    rules = (CLIMB_RULE,) if direction > 0 else (descent_rule(start_altitude_ft), HIGH_RATE_RULE)
+    runs = [_rate_run(pairs, direction, rule) for rule in rules]
+    return next(
+        ((rule, run) for rule, run in zip(rules, runs, strict=True) if _holds(run, rule)), (rules[0], runs[0])
+    )
 
 
-def _holds(run, seconds, reports):
-    return len(run) >= reports and run[-1][0]["ts"] - run[0][0]["ts"] >= seconds
+def _holds(run, rule):
+    return len(run) >= rule.reports and run[-1][0]["ts"] - run[0][0]["ts"] >= rule.seconds
 
 
-def _rate_run(pairs, direction, threshold, seconds=30, reports=4):
-    """Choose a consecutive run before evidence is downsampled to 96 reports."""
+def _rate_run(pairs, direction, rule):
+    """Choose a consecutive run at the rule's rate before evidence is downsampled to 96 reports."""
+    threshold = rule.threshold_fpm
     runs, run = [], []
     for point, rate in pairs:
         if run and (rate * direction < threshold or not 0 < point["ts"] - run[-1][0]["ts"] <= 45):
@@ -582,7 +583,7 @@ def _rate_run(pairs, direction, threshold, seconds=30, reports=4):
         runs.append(run)
 
     def order(run):
-        return _holds(run, seconds, reports), run[-1][0]["ts"] - run[0][0]["ts"], len(run)
+        return _holds(run, rule), run[-1][0]["ts"] - run[0][0]["ts"], len(run)
 
     return max(runs, key=order, default=[])
 
@@ -619,13 +620,13 @@ def _emergency_profile(points, observed, reference, after):
     return found
 
 
-def _vertical_finding(episode, points, threshold=None, state="active", reason=None, at=None):
+def _vertical_finding(episode, points, state="active", reason=None, at=None):
     """The rapid climb or descent finding for one rate episode, or None.
 
     ``episode["reports"]`` holds (point, rate, repeat) for each report in the
     episode. ``at`` is the report that ended it, so the saved state updates.
-    ``threshold`` None applies the episode's own rule (_vertical_rule), which
-    the finding records with its threshold and qualifying window.
+    The episode's own rule (_vertical_rule) applies, and the finding records
+    its threshold and qualifying window.
     """
     reports = episode["reports"]
     observed = [p for p, _, _ in reports]
@@ -640,18 +641,16 @@ def _vertical_finding(episode, points, threshold=None, state="active", reason=No
         if ok:
             trusted.append(pair)
         (usable if ok or abs(pair[1]) <= EXTREME_RATE_FPM else outliers).append(pair)
-    threshold, seconds_required, reports_required = _vertical_rule(
-        usable, direction, altitude(observed[0]), threshold
-    )
+    rule, run = _vertical_rule(usable, direction, altitude(observed[0]))
+    threshold = rule.threshold_fpm
     qualifying = [pair for pair in usable if pair[1] * direction >= threshold]
     if len(qualifying) < 2 or qualifying[-1][0]["ts"] - qualifying[0][0]["ts"] < 10:
         return None
     # Peak and high-rate metrics use only rates confirmed by a neighbouring report.
     supported = [pair for pair in trusted if pair[1] * direction >= threshold]
     peak_point, peak = max(supported or qualifying, key=lambda pair: abs(pair[1]))
-    run = _rate_run(usable, direction, threshold, seconds_required, reports_required)
     run_duration = run[-1][0]["ts"] - run[0][0]["ts"]
-    confirmed = _holds(run, seconds_required, reports_required)
+    confirmed = _holds(run, rule)
     if not confirmed and abs(peak) < HIGH_RATE_FPM:
         return None
     flags, tags = [], []
@@ -677,7 +676,7 @@ def _vertical_finding(episode, points, threshold=None, state="active", reason=No
             flags.append("airport_context_unavailable")
         elif _airport_descent(observed):
             tags.append("airport_descent_context")
-    high = _rate_run(trusted, direction, HIGH_RATE_FPM)
+    high = _rate_run(trusted, direction, HIGH_RATE_RULE)
     sustained = {}
     if high:
         high_points = [p for p, _ in high]
@@ -730,8 +729,8 @@ def _vertical_finding(episode, points, threshold=None, state="active", reason=No
         altitude_reference=reference,
         rate_field=field,
         threshold_fpm=threshold,
-        qualifying_seconds_required=seconds_required,
-        qualifying_reports_required=reports_required,
+        qualifying_seconds_required=rule.seconds,
+        qualifying_reports_required=rule.reports,
         distinct_report_count=len(distinct),
         state=state,
         episode_start=observed[0]["ts"],
@@ -760,15 +759,13 @@ def _end_reason(point, rate, signature, previous):
     return None
 
 
-def vertical(points, threshold=None):
-    """Rapid climb and descent findings. ``threshold`` None applies each
-    episode's rule (descent_rule, CLIMB_RULE); a number applies it to every
-    episode with the flat 30 s and 4-report window."""
+def vertical(points):
+    """Rapid climb and descent findings, each judged by its episode's rule
+    (descent_rule, CLIMB_RULE). Reports at EPISODE_FPM or faster open an episode."""
     results, active, previous, preferred, prior = [], None, None, None, None
-    opening = EPISODE_FPM if threshold is None else threshold
 
     def finish(episode, state="active", reason=None, at=None):
-        if episode and (finding := _vertical_finding(episode, points, threshold, state, reason, at)):
+        if episode and (finding := _vertical_finding(episode, points, state, reason, at)):
             results.append(finding)
 
     derivation_start = 0
@@ -795,11 +792,11 @@ def vertical(points, threshold=None):
         if p.get("ground") or rate is None:
             continue
         direction = 1 if rate > 0 else -1
-        if active and direction != active["direction"] and abs(rate) >= opening:
+        if active and direction != active["direction"] and abs(rate) >= EPISODE_FPM:
             finish(active, "recovered", "recovered", p["ts"])
             active = None
         if active is None:
-            if abs(rate) < opening:
+            if abs(rate) < EPISODE_FPM:
                 continue
             active = {
                 "reports": [],
@@ -810,7 +807,7 @@ def vertical(points, threshold=None):
             }
         active["reports"].append((p, rate, _repeat(active["reports"], p, field, rate)))
         active["conflict"] = active["conflict"] or conflict
-        if rate * active["direction"] < opening * 0.65:
+        if rate * active["direction"] < EPISODE_FPM * 0.65:
             if active["recovery"] is None:
                 active["recovery"] = p["ts"]
             if p["ts"] - active["recovery"] >= 20:
@@ -1235,30 +1232,29 @@ def _oscillations(heights, step=500):
     return reversals
 
 
-_AEROBATIC_CACHE = {}
-
-
 def aerobatic_types():
     """The aerobatic designators: those the pinned type table lists, or every candidate without it."""
-    generation = reference.GENERATION
-    if generation not in _AEROBATIC_CACHE:
-        if reference.dataset("aircraft-types") is None:
-            found = frozenset(AEROBATIC_CANDIDATES)
-        else:
-            found = frozenset(code for code in AEROBATIC_CANDIDATES if reference.type_info(code) is not None)
-        _AEROBATIC_CACHE.clear()
-        _AEROBATIC_CACHE[generation] = found
-    return _AEROBATIC_CACHE[generation]
+    return _aerobatic_types(reference.GENERATION)
 
 
-def _max_turn_rate(pos):
+@lru_cache(maxsize=1)
+def _aerobatic_types(generation):
+    # Keyed on the reference generation, so reloaded reference data is read again.
+    if reference.dataset("aircraft-types") is None:
+        return frozenset(AEROBATIC_CANDIDATES)
+    return frozenset(code for code in AEROBATIC_CANDIDATES if reference.type_info(code) is not None)
+
+
+def _max_turn_rate(pos, coords=None):
     """The highest position-derived turn rate held for AEROBATIC_TURN_SECONDS, in deg/s, or None.
 
     A held rate is the slowest of consecutive leg pairs, each turning at least
     AEROBATIC_TURN_RATE_DPS either way, that together span AEROBATIC_TURN_SECONDS;
-    the result is the highest held rate over every such span.
+    the result is the highest held rate over every such span. ``coords`` are
+    xy(pos), when the caller already has them.
     """
-    pairs = [(a["t0"], b["t1"], abs(_turn_rate(a, b))) for a, b in pairwise(track_legs(pos, minimum=0.1))]
+    legs = track_legs(pos, minimum=0.1, coords=coords)
+    pairs = [(a["t0"], b["t1"], abs(_turn_rate(a, b))) for a, b in pairwise(legs)]
     best = None
     for index, (start, _, rate) in enumerate(pairs):
         if rate < AEROBATIC_TURN_RATE_DPS:
@@ -1278,8 +1274,12 @@ def aerobatic(pos, aircraft, coords=None):
     """Repeated large altitude reversals in a small area by an aerobatic type or a hard-turning light aircraft.
 
     The window is the last AEROBATIC_WINDOW_SECONDS of ``pos``; ``coords`` are
-    xy(pos), when the caller already has them.
+    xy(pos), when the caller already has them. Only a listed aerobatic type, or a
+    light (A1) aircraft that also holds a hard turn, is measured at all.
     """
+    typed = reference.clean(aircraft.get("t")) in aerobatic_types()
+    if not typed and aircraft.get("category") != "A1":
+        return None
     cutoff = pos[-1]["ts"] - AEROBATIC_WINDOW_SECONDS
     first = next(index for index, p in enumerate(pos) if p["ts"] >= cutoff)
     window = pos[first:]
@@ -1301,13 +1301,10 @@ def aerobatic(pos, aircraft, coords=None):
         or excursion < AEROBATIC_MIN_EXCURSION_FT
     ):
         return None
-    turn = _max_turn_rate(window)
-    if reference.clean(aircraft.get("t")) in aerobatic_types():
-        basis = "type"
-    elif aircraft.get("category") == "A1" and turn is not None:
-        basis = "turn_rate"
-    else:
+    turn = _max_turn_rate(window, local)
+    if not typed and turn is None:
         return None
+    basis = "type" if typed else "turn_rate"
     finding = build(
         "aerobatic_practice",
         window,
@@ -1529,7 +1526,7 @@ def merge_legs(legs):
     return merged
 
 
-def survey_grid(legs, points=None):
+def survey_grid(legs, points=None, *, merged=False):
     """At least six alternating, evenly spaced straight legs over at least 30 minutes.
 
     Legs are at least 3 NM long and within 10° of the grid axis; successive lines
@@ -1539,44 +1536,26 @@ def survey_grid(legs, points=None):
     with a leg short of that is returned with the altitude_coverage_incomplete flag.
     With ``points`` (positions(), in time order), the legs that form a grid are
     summarized from those reports first, so a caller can pass geometry-only legs
-    and summarize none when no grid forms.
+    and summarize none when no grid forms. ``merged`` says the legs are already
+    merge_legs() output.
     """
     # Merging only joins legs, so six grid legs need six inputs.
     if len(legs) < 6:
         return None
-    legs = [leg for leg in merge_legs(legs) if leg["length_nm"] >= 3]
+    legs = [leg for leg in (legs if merged else merge_legs(legs)) if leg["length_nm"] >= 3]
     if len(legs) < 6:
         return None
     origin = legs[0]["start"]
-    ends = [(_local(leg["start"], origin), _local(leg["end"], origin)) for leg in legs]
-    vectors = [(b[0] - a[0], b[1] - a[1]) for a, b in ends]
-    angles = [math.atan2(dx, dy) for dx, dy in vectors]
-    axis = (
-        math.atan2(
-            sum(math.sin(2 * a) * math.hypot(*v) for a, v in zip(angles, vectors, strict=True)),
-            sum(math.cos(2 * a) * math.hypot(*v) for a, v in zip(angles, vectors, strict=True)),
-        )
-        / 2
-    )
-    aligned = [
-        (leg, angle, pair)
-        for leg, angle, pair in zip(legs, angles, ends, strict=True)
-        if abs(wrap_angle(math.degrees(2 * (angle - axis))) / 2) <= 10
-    ]
-    best, run = [], []
-    for leg, angle, pair in aligned:
-        direction = 1 if math.cos(angle - axis) > 0 else -1
-        if run and direction == run[-1][1]:
-            run = []
-        run.append((leg, direction, pair))
-        if len(run) > len(best):
-            best = list(run)
+    ends = {id(leg): (_local(leg["start"], origin), _local(leg["end"], origin)) for leg in legs}
+    vectors = [(b[0] - a[0], b[1] - a[1]) for a, b in ends.values()]
+    headings = [math.degrees(math.atan2(dx, dy)) % 360 for dx, dy in vectors]
+    axis = _axis_mean(headings, [math.hypot(*v) for v in vectors])
+    best = _alternating_run(list(zip(legs, headings, strict=True)), axis, 10)
     if len(best) < 6:
         return None
     grid = [leg for leg, _, _ in best]
-    across = [
-        statistics.fmean(-x * math.cos(axis) + y * math.sin(axis) for x, y in pair) for _, _, pair in best
-    ]
+    normal = (-math.cos(math.radians(axis)), math.sin(math.radians(axis)))
+    across = [statistics.fmean(x * normal[0] + y * normal[1] for x, y in ends[id(leg)]) for leg in grid]
     shifts = [b - a for a, b in pairwise(across)]
     spacing = [abs(s) for s in shifts]
     heights = [h for leg in grid for h in (leg.get("alt_min"), leg.get("alt_max")) if number(h) is not None]
@@ -1610,14 +1589,19 @@ def survey_grid(legs, points=None):
     }
 
 
+def _leg_endpoints(legs):
+    """Each leg summary's start and end as points: time, position, and source."""
+    return [
+        {"ts": leg[stamp], "lat": leg[edge][0], "lon": leg[edge][1], "source": leg.get("source", "unknown")}
+        for leg in legs
+        for edge, stamp in (("start", "started_at"), ("end", "ended_at"))
+    ]
+
+
 def _survey_finding(grid):
     # The endpoints give the shape's extent and sources; the reports between them
     # are gone, so each leg's own quality flags carry their provenance and integrity.
-    points = [
-        {"ts": leg[stamp], "lat": leg[edge][0], "lon": leg[edge][1], "source": leg.get("source", "unknown")}
-        for leg in grid["legs"]
-        for edge, stamp in (("start", "started_at"), ("end", "ended_at"))
-    ]
+    points = _leg_endpoints(grid["legs"])
     return build(
         "survey_grid",
         points,
@@ -1633,10 +1617,11 @@ def _survey_finding(grid):
     )
 
 
-def _axis_mean(headings):
-    """Circular mean of headings modulo 180, in degrees."""
-    x = sum(math.cos(math.radians(2 * h)) for h in headings)
-    y = sum(math.sin(math.radians(2 * h)) for h in headings)
+def _axis_mean(headings, weights=None):
+    """Circular mean of headings modulo 180, in degrees, optionally weighted."""
+    weights = weights or [1] * len(headings)
+    x = sum(w * math.cos(math.radians(2 * h)) for h, w in zip(headings, weights, strict=True))
+    y = sum(w * math.sin(math.radians(2 * h)) for h, w in zip(headings, weights, strict=True))
     return (math.degrees(math.atan2(y, x)) / 2) % 180
 
 
@@ -1645,13 +1630,13 @@ def _axis_offset(heading, axis):
     return (heading - axis + 90) % 180 - 90
 
 
-def _alternating_run(entries, axis):
-    """The longest run of (leg, heading) entries within RACETRACK_AXIS_TOLERANCE of ``axis``
+def _alternating_run(entries, axis, tolerance=RACETRACK_AXIS_TOLERANCE):
+    """The longest run of (leg, heading) entries within ``tolerance`` degrees of ``axis``
     whose direction along it alternates, as (leg, heading, sign) triples. Legs off
     the axis are skipped without ending the run."""
     run, best = [], []
     for leg, heading in entries:
-        if abs(_axis_offset(heading, axis)) > RACETRACK_AXIS_TOLERANCE:
+        if abs(_axis_offset(heading, axis)) > tolerance:
             continue
         sign = 1 if abs(wrap_angle(heading - axis)) <= 90 else -1
         if run and sign == run[-1][2]:
@@ -1696,26 +1681,37 @@ def _racetrack_lines(run, axis):
     return {"legs": legs, "axis": axis, "spacing": spacing, "repeat": repeat, "centers": centers}
 
 
-def racetrack(legs, pos, aircraft):
+def racetrack(legs, pos, aircraft, *, merged=False):
     """A repeated racetrack of long reciprocal legs over the same two lines.
 
     ``legs`` are straight_legs() summaries, merged here as survey_grid merges
-    them. Each leg at least 10 NM long proposes its heading as the axis; the
-    longest run of alternating legs within 10° of it is refitted to its own axis
-    and checked again. A racetrack needs four legs over at least 40 minutes, its
-    two lines 2 to 15 NM apart, and every leg within 1 NM of its line. The
-    longest run that passes wins, the earliest on a tie.
+    them unless ``merged`` says they are merge_legs() output already. Each leg
+    at least 10 NM long proposes its heading as the axis; the longest run of
+    alternating legs within 10° of it is refitted to its own axis and checked
+    again. A racetrack needs four legs over at least 40 minutes, its two lines
+    2 to 15 NM apart, and every leg within 1 NM of its line. The longest run
+    that passes wins, the earliest on a tie.
     """
-    long_legs = [leg for leg in merge_legs(legs) if (leg.get("length_nm") or 0) >= RACETRACK_MIN_LEG_NM]
+    # Merging only joins legs, so four racetrack legs need four inputs.
+    if len(legs) < RACETRACK_MIN_LEGS:
+        return None
+    long_legs = [
+        leg
+        for leg in (legs if merged else merge_legs(legs))
+        if (leg.get("length_nm") or 0) >= RACETRACK_MIN_LEG_NM
+    ]
     if len(long_legs) < RACETRACK_MIN_LEGS:
         return None
     # Straight-leg summaries carry no heading; it is the leg's own chord.
     entries = [(leg, math.degrees(math.atan2(*_local(leg["end"], leg["start"]))) % 360) for leg in long_legs]
-    shape = None
+    shape, tried = None, set()
     for candidate in sorted({round(heading % 180, 1) for _, heading in entries}):
         run = _alternating_run(entries, candidate)
-        if len(run) < RACETRACK_MIN_LEGS:
+        # Nearby candidate axes often select the same legs; each run is judged once.
+        key = tuple(id(leg) for leg, _, _ in run)
+        if len(run) < RACETRACK_MIN_LEGS or key in tried:
             continue
+        tried.add(key)
         # Transit legs never set the axis: it is refitted on the run's own legs.
         axis = _axis_mean([heading for _, heading, _ in run])
         refit = _alternating_run([(leg, heading) for leg, heading, _ in run], axis)
@@ -1733,16 +1729,7 @@ def racetrack(legs, pos, aircraft):
     aligned = summarize_legs(shape["legs"], pos)
     # The legs can outlast the buffer: their endpoints give the shape's extent,
     # and the buffered reports inside it fill in the track.
-    by_time = {
-        leg[stamp]: {
-            "ts": leg[stamp],
-            "lat": leg[edge][0],
-            "lon": leg[edge][1],
-            "source": leg.get("source", "unknown"),
-        }
-        for leg in aligned
-        for edge, stamp in (("start", "started_at"), ("end", "ended_at"))
-    }
+    by_time = {point["ts"]: point for point in _leg_endpoints(aligned)}
     by_time.update(
         {p["ts"]: p for p in pos if aligned[0]["started_at"] <= p["ts"] <= aligned[-1]["ended_at"]}
     )
@@ -2291,14 +2278,16 @@ def trajectory(points, aircraft, *, orbit=None, track=None, legs=None):
     # This runs for every fresh report, so the buffer's legs are measured, and
     # their reports summarized only once they form a grid.
     lines = [*(legs or []), *straight_legs(pos, legs=fine, summarize=False)]
-    grid = survey_grid(lines, pos)
+    # Both long shapes read the same merged lines; too few lines for either skip the merge.
+    merged = merge_legs(lines) if len(lines) >= RACETRACK_MIN_LEGS else []
+    grid = survey_grid(merged, pos, merged=True)
     if grid:
         findings.append(_survey_finding(grid))
     elif match := parallel(pos, coords):
         if _terminal(pos):
             _tag(match, "terminal_area_context")
         findings.append(match)
-    if not grid and (match := racetrack(lines, pos, aircraft)):
+    if not grid and (match := racetrack(merged, pos, aircraft, merged=True)):
         findings.append(match)
     if match := go_around(pos):
         findings.append(match)
@@ -3276,7 +3265,6 @@ def _close_previous(samples, segment, gap, split, evaluate):
 def analyze(
     samples,
     aircraft,
-    threshold=None,
     *,
     orbit=None,
     now=None,
@@ -3305,7 +3293,7 @@ def analyze(
         return []
     status = recent(samples, STATUS_GAP, split_sources=False)
     newest = max(points[-1]["ts"], status[-1]["ts"])
-    findings = vertical(points, threshold) + signals(status)
+    findings = vertical(points) + signals(status)
     track = positions(samples, cache=positions_cache)
     findings += trajectory(points, aircraft, orbit=orbit, track=track, legs=legs)
     findings += [f for f in (gnss_integrity_loss(points), selected_altitude_overshoot(points)) if f]
@@ -3313,7 +3301,7 @@ def analyze(
     if now is not None and now - newest > STATUS_GAP:
         findings = _closed(findings, "stale", newest + STATUS_GAP)
     else:
-        findings += _close_previous(samples, points, 45, True, lambda segment: vertical(segment, threshold))
+        findings += _close_previous(samples, points, 45, True, vertical)
         findings += _close_previous(samples, status, STATUS_GAP, False, signals)
     return [archived(finding, archive) for finding in findings] if archive else findings
 
