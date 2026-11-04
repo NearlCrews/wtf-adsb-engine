@@ -348,14 +348,17 @@ def run_once(path, now=None, opener=None, *, enabled_override=None):
         for event in events:
             addresses.setdefault(event["hex"], []).append(event)
         checks = {address: saved(db, address, now) for address in addresses}
-        due = next((address for address, row in checks.items() if _due(row, addresses[address], now)), None)
+        # In pending()'s order: the first address due a lookup is asked next.
+        waiting = [address for address, row in checks.items() if _due(row, addresses[address], now)]
+        due = waiting[0] if waiting else None
         held = registry_http.waiting(db, NAME, now, INTERVAL) if due else None
         # Writes come last: the retained checks, then the claim on the next request. An
         # address due for a recheck keeps its block until its own lookup answers.
+        waiting = set(waiting)
         attached = sum(
             _attach_all(db, addresses[address], row)
             for address, row in checks.items()
-            if row is not None and not _due(row, addresses[address], now)
+            if row is not None and address not in waiting
         )
         if due and not held:
             registry_http.requested(db, NAME, now)

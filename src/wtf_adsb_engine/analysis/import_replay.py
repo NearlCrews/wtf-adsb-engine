@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import archive_paths
-from .app import MAX_RECEIVER_AGE, connect, initialize, meta, put_meta, record, remember
+from .app import MAX_RECEIVER_AGE, add_missing_columns, connect, initialize, meta, put_meta, record, remember
 from .episode_replay import CARRIED_LABEL, carried_label
 from .history import ARCHIVE_ERRORS, MAGIC, TYPES, error_type, label, read_replay
 from .history_backfill import code_hashes, digest, writer_lock
@@ -142,11 +142,8 @@ def import_archives(args):
         db.execute(
             "CREATE TABLE IF NOT EXISTS replay_imports(path TEXT PRIMARY KEY, imported_at REAL, points INTEGER)"
         )
-        columns = {row[1] for row in db.execute("PRAGMA table_info(replay_imports)")}
-        for column, kind in IMPORT_COLUMNS:
-            if column not in columns:
-                # Legacy rows keep NULL: they predate recorded versions and boundaries.
-                db.execute(f"ALTER TABLE replay_imports ADD COLUMN {column} {kind}")
+        # Legacy rows keep NULL: they predate recorded versions and boundaries.
+        add_missing_columns(db, "replay_imports", IMPORT_COLUMNS)
         # Every digest that imported rows keeps its file map.
         known = meta(db, "replay_import_code", {}) or {}
         put_meta(db, "replay_import_code", {**known, provenance["code_sha256"]: code})

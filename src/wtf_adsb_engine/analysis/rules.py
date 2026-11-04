@@ -271,7 +271,7 @@ def callsign_designator(aircraft):
     Only an airline-style callsign whose designator the operator table names has one.
     The daily table records it, and first_operator_here compares it.
     """
-    callsign = str(aircraft.get("flight") or "").strip()
+    callsign = _callsign(aircraft)
     if AIRLINE_CALLSIGN.fullmatch(callsign) and reference.operator_name(callsign[:3]):
         return callsign[:3]
     return ""
@@ -406,9 +406,9 @@ def identity_checks(a):
     that the US algorithm assigns to another address, a registration-style call
     sign that differs, or an allocation/nationality disagreement sets "conflict".
     A call sign that differs from the registration only by formatting or one
-    trailing letter (trivial_difference), or a registration that differs from the
-    address's N-number only by formatting, stays False in its check but sets no
-    conflict.
+    trailing letter (trivial_difference) stays False in its check but sets no
+    conflict. A registration is compacted (parse_registration) before it is
+    compared with the address, so formatting alone never makes it disagree.
     PIA and non-ICAO (~) addresses skip the algorithm. These checks compare
     database and broadcast fields; they never establish who operates the aircraft.
     Results are memoized on the identity fields, so call once per report.
@@ -493,9 +493,6 @@ def _compute_identity(a):
 
     year = number(a.get("year"))
     earliest = reference.earliest_year(typecode) if typecode else None
-    registration_trivial, callsign_trivial = _trivial_disagreements(
-        registration, us_registration, callsign_registration, registration_matches, callsign_matches
-    )
     return {
         "us_registration_from_address": us_registration,
         "registration_matches_address": registration_matches,
@@ -509,8 +506,11 @@ def _compute_identity(a):
         # Additional to the shared contract: a database year before the type's
         # earliest plausible year. It suppresses vintage but is not a conflict.
         "year_plausible": None if year is None or earliest is None else year >= earliest,
-        "conflict": (registration_matches is False and not registration_trivial)
-        or (callsign_matches is False and not callsign_trivial)
+        "conflict": registration_matches is False
+        or (
+            callsign_matches is False
+            and not _callsign_trivial(callsign_registration, registration, us_registration)
+        )
         or allocation_matches is False,
     }
 
@@ -518,13 +518,9 @@ def _compute_identity(a):
 _NON_ALPHANUMERIC = re.compile(r"[^A-Z0-9]")
 
 
-def _compact_identifier(value):
-    return _NON_ALPHANUMERIC.sub("", str(value or "").upper())
-
-
 def trivial_difference(a, b):
     """Two identifiers that differ only by formatting or one trailing letter."""
-    x, y = _compact_identifier(a), _compact_identifier(b)
+    x, y = (_NON_ALPHANUMERIC.sub("", _text(value)) for value in (a, b))
     if not x or not y:
         return False
     if x == y:
@@ -533,20 +529,15 @@ def trivial_difference(a, b):
     return len(longer) == len(shorter) + 1 and longer.startswith(shorter) and longer[-1].isalpha()
 
 
-def _trivial_disagreements(registration, derived, callsign, registration_matches, callsign_matches):
-    """Whether the registration and call sign disagreements are only trivial ones.
+def _callsign_trivial(callsign, registration, derived):
+    """Whether a disagreeing call sign differs from the registration (or, without one,
+    the address's N-number ``derived``) only by formatting or one trailing letter
+    (trivial_difference).
 
-    The registration is compared with the address's own N-number by formatting
-    only: N8447 and N8447L are different airframes with different addresses. The
-    call sign is compared with the registration (or that N-number when no
-    registration is listed) by trivial_difference, which also forgives one
-    trailing letter. An allocation and nationality disagreement is never trivial.
+    Only the call sign has this leniency: N8447 and N8447L are different airframes,
+    so a registration that disagrees with the address is always a conflict.
     """
-    compact = _compact_identifier(registration)
-    return (
-        registration_matches is False and bool(compact) and compact == _compact_identifier(derived),
-        callsign_matches is False and trivial_difference(callsign, registration or derived),
-    )
+    return trivial_difference(callsign, registration or derived)
 
 
 def performance_context(aircraft):
@@ -684,7 +675,7 @@ def candidates(a, now, rarity=None, profiles=None, *, identity=None, band=None):
                 "",
                 f"The aircraft database or the address block marks this address as military, and the block belongs to {allocation['name']}.",
                 "This is a database classification and an address allocation. It does not identify the mission, crew, or purpose of the flight, and a re-registered aircraft can keep an old address.",
-                80,
+                kinds.KINDS["foreign_military"].fixed_score[0],
                 "Database tag and allocation block",
                 {
                     "foreign_military": {
@@ -1255,20 +1246,19 @@ def _conflict_reasons(checks, aircraft=None):
     reasons = []
     derived = checks.get("us_registration_from_address")
     callsign = checks.get("callsign_registration")
-    registration_trivial, callsign_trivial = _trivial_disagreements(
-        parse_registration((aircraft or {}).get("r"))[0],
-        derived,
-        callsign,
-        checks.get("registration_matches_address"),
-        checks.get("callsign_matches_registration"),
-    )
-    if checks.get("registration_matches_address") is False and not registration_trivial:
+    if checks.get("registration_matches_address") is False:
         reasons.append(
             f"The US address algorithm assigns this address to {derived}, but the aircraft database lists a different registration."
             if derived
             else "The aircraft database lists a US registration that the US address algorithm assigns to a different address."
         )
-    if checks.get("callsign_matches_registration") is False and callsign and not callsign_trivial:
+    # The call sign's comparison target needs the parsed registration, as in _compute_identity.
+    registration = parse_registration((aircraft or {}).get("r"))[0]
+    if (
+        checks.get("callsign_matches_registration") is False
+        and callsign
+        and not _callsign_trivial(callsign, registration, derived)
+    ):
         reasons.append(
             f"The broadcast flight ID {callsign} looks like a registration that differs from this aircraft's registration."
         )
@@ -1441,7 +1431,7 @@ def supplementary_candidates(a, now, *, identity=None):
                 "",
                 "The aircraft database has no registration for this transmitting address, which sent positions directly over ADS-B.",
                 "Registries lag new registrations, some States publish none, and an address can be programmed by hand. The second-source check runs again a week after the first sighting before this can become a story.",
-                70,
+                kinds.KINDS["unregistered_address"].fixed_score[0],
                 "Database lookup",
                 {
                     "unregistered": {
@@ -1456,8 +1446,10 @@ def supplementary_candidates(a, now, *, identity=None):
     return _annotate(findings, checks, a)
 
 
-def first_sighting(aircraft, history):
+def first_sighting(aircraft, history, *, designator=None):
     """First retained sighting of a type, an address-allocation State, or an operator designator.
+
+    ``designator`` is callsign_designator(aircraft), when the caller already has it.
 
     history holds counts from the daily and coverage tables, all for UTC days
     before the current one:
@@ -1547,7 +1539,7 @@ def first_sighting(aircraft, history):
                 },
             )
         )
-    designator = callsign_designator(aircraft)
+    designator = callsign_designator(aircraft) if designator is None else designator
     operator = reference.operator_name(designator) if designator else None
     operator_coverage = number(history.get("operator_coverage_days", coverage)) or 0
     operator_since = history.get("operator_first_day", since)

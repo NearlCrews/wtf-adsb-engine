@@ -39,6 +39,8 @@ METRICS = {
 # Another aircraft's own measurements that no episode metric names: a day's median
 # ground speed for each participant in a winds-aloft day.
 PARTICIPANT_METRICS = {"median_gs_kn": ("Median ground speed for the UTC day", "kn")}
+# Every measurement a participant may carry.
+PARTICIPANT_MEASUREMENTS = {**METRICS, **PARTICIPANT_METRICS}
 # Episode metrics shown with their own timestamp or as a rule, not over the window.
 PEAK_METRICS = {"peak_rate_fpm": "peak_at_utc"}
 RULE_METRICS = {"threshold_fpm", "qualifying_seconds_required", "qualifying_reports_required"}

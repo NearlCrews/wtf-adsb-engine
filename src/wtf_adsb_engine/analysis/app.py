@@ -223,6 +223,16 @@ def put_meta(db, key, value):
     db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, json.dumps(value)))
 
 
+def add_missing_columns(db, table, columns):
+    """Add each (name, declaration) column that ``table`` lacks; returns the names added."""
+    present = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    added = [name for name, _ in columns if name not in present]
+    for name, declaration in columns:
+        if name in added:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+    return added
+
+
 def initialize(path=DATABASE):
     path.parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as db:
@@ -258,8 +268,7 @@ def initialize(path=DATABASE):
           max_gs REAL NOT NULL, updated_at REAL NOT NULL, PRIMARY KEY(season,typecode,hex));
         """)
         # Journals created before the operator designator was recorded gain the column here.
-        if "designator" not in {row[1] for row in db.execute("PRAGMA table_info(daily)")}:
-            db.execute("ALTER TABLE daily ADD COLUMN designator TEXT NOT NULL DEFAULT ''")
+        add_missing_columns(db, "daily", (("designator", "TEXT NOT NULL DEFAULT ''"),))
         db.execute("CREATE INDEX IF NOT EXISTS daily_designator ON daily(designator,day)")
         if meta(db, OPERATOR_SINCE) is None:
             # A journal with earlier rows records designators from its next whole UTC
@@ -386,10 +395,11 @@ def stored(a):
     return {key: value for key, value in a.items() if key not in RECEIVER_FIELDS}
 
 
-def remember(db, a, first, last, observations=1, *, performance=True, band=0):
+def remember(db, a, first, last, observations=1, *, performance=True, band=0, designator=None):
     """Save the latest report. Records come only from direct reports, and an
     identity conflict (``performance=False``) adds nothing to them. ``band`` is
-    the report's range band (rules.range_band); the exact range is never saved."""
+    the report's range band (rules.range_band); the exact range is never saved.
+    ``designator`` is rules.callsign_designator(a), when the caller already has it."""
     address = a["hex"]
     sources = telemetry.report_sources(a)
     gs = telemetry.direct_value(a, "gs", sources) if performance else None
@@ -434,7 +444,7 @@ def remember(db, a, first, last, observations=1, *, performance=True, band=0):
             band,
         ),
     )
-    designator = rules.callsign_designator(a)
+    designator = rules.callsign_designator(a) if designator is None else designator
     for stamp in {first, last}:
         day = datetime.fromtimestamp(stamp, timezone.utc).date().isoformat()
         db.execute(
@@ -1309,12 +1319,13 @@ class Detector:
         # Only a coarse band of the receiver range is used (RULES-12).
         distance = number(raw.get("r_dst"))
         band = range_band(distance) if distance is not None and distance <= RANGE_BOUND_NM else 0
-        remember(db, a, stamp, stamp, performance=not conflict, band=band)
+        designator = rules.callsign_designator(a)
+        remember(db, a, stamp, stamp, performance=not conflict, band=band, designator=designator)
         winds.remember(db, a, stamp, self.winds_samples)
         findings = candidates(a, now, self.rarity, self.profiles, identity=checks, band=band)
         findings += rules.supplementary_candidates(a, now, identity=checks)
         findings += self._guarded(
-            status, "first_sighting", self._first_sightings, db, a, stamp, checks, default=[]
+            status, "first_sighting", self._first_sightings, db, a, stamp, checks, designator, default=[]
         )
         findings = [f for f in findings if f.kind != "vertical" and not f.kind.startswith(STATUS_PREFIX)]
         history = self.telemetry[address]
@@ -1551,7 +1562,7 @@ class Detector:
                 threats[threat] = {"samples": list(samples), "aircraft": self._identity(threat)}
         return threats or None
 
-    def _first_sightings(self, db, a, stamp, checks):
+    def _first_sightings(self, db, a, stamp, checks, designator=None):
         """first_type_here / first_country_here / first_operator_here against days before
         the current UTC day.
 
@@ -1564,7 +1575,7 @@ class Detector:
         day = datetime.fromtimestamp(stamp, timezone.utc).date().isoformat()
         cache = self._first_cache(db, day, address, stamp)
         typecode = a.get("t", "")
-        designator = rules.callsign_designator(a)
+        designator = rules.callsign_designator(a) if designator is None else designator
         history = cache["aircraft"].get((address, typecode, designator))
         if history is None:
             country = checks.get("allocation_country")
@@ -1598,7 +1609,7 @@ class Detector:
                 "operator_coverage_days": cache["operator_coverage_days"],
                 "operator_first_day": cache["operator_first_day"],
             }
-        return rules.first_sighting(a, history)
+        return rules.first_sighting(a, history, designator=designator)
 
     def _first_cache(self, db, day, address, stamp):
         """The first-sighting baseline for ``day``, built once (see _first_history).

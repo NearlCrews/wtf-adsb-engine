@@ -253,12 +253,7 @@ PARTICIPANT = _object(
         "role": _enum(*stories.PARTICIPANT_ROLES),
         "source": SOURCE,
         "measurements": _object(
-            {
-                key: _numeric
-                for key in set(episode_evidence.METRICS)
-                | set(episode_evidence.PARTICIPANT_METRICS)
-                | POINT_NUMBERS
-            }
+            {key: _numeric for key in set(episode_evidence.PARTICIPANT_MEASUREMENTS) | POINT_NUMBERS}
         ),
         "quality_flags": FLAGS,
     }

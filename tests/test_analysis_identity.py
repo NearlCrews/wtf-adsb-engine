@@ -140,6 +140,17 @@ class FirstOperatorHere(unittest.TestCase):
             "first_operator_here", self.kinds_of(self.AIRCRAFT, self.history(operator_days=None))
         )
 
+    def test_the_designator_comes_from_the_compact_callsign_or_the_caller(self):
+        self.assertEqual(rules.callsign_designator({"flight": " dal 1234 "}), "DAL")
+        self.assertEqual(rules.callsign_designator({"flight": None}), "")
+        # A caller that already derived the designator passes it; "" means none.
+        self.assertNotIn(
+            "first_operator_here",
+            [f.kind for f in rules.first_sighting(self.AIRCRAFT, self.history(), designator="")],
+        )
+        found = rules.first_sighting({**self.AIRCRAFT, "flight": None}, self.history(), designator="DAL")
+        self.assertIn("first_operator_here", [f.kind for f in found])
+
     def test_operator_coverage_counts_only_the_days_that_record_designators(self):
         history = self.history(coverage_days=90, operator_coverage_days=29, operator_first_day="2026-10-01")
         self.assertNotIn("first_operator_here", self.kinds_of(self.AIRCRAFT, history))
@@ -316,6 +327,8 @@ class UnregisteredAddress(unittest.TestCase):
             {"callsign": "TEST01", "category": "A2", "source": "adsb_icao"},
         )
         self.assertIn("registry_gap", found["unregistered_address"].evidence["context_tags"])
+        # The raw score is the registry's fixed score.
+        self.assertEqual(found["unregistered_address"].score, 75)
 
     def test_placeholder_registration_counts_as_missing(self):
         aircraft = {

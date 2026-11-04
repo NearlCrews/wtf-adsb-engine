@@ -1620,7 +1620,7 @@ def _designator(points):
     """The first operator designator among a day's positions, as the collector's daily
     table keeps it, or ""."""
     return next(
-        (found for point in points if point.get("flight") and (found := rules.callsign_designator(point))),
+        (found for point in points if (found := rules.callsign_designator(point))),
         "",
     )
 
@@ -2097,24 +2097,30 @@ def coverage_days(database, minimum=COVERAGE_SECONDS):
     )
 
 
-def _earliest(formats, key):
-    """(format, value) of a per-format record field, by time, then traces first."""
+def _format_order(name):
+    """How a choice between archive formats breaks ties: traces first, then by name."""
+    return name != "traces", name
+
+
+def _first_format(formats, key, rank):
+    """(format, value) of the per-format record field ``key`` with the lowest rank(value),
+    ties broken by _format_order; (None, None) when no format has it."""
     found = [
-        (value["ts"], name != "traces", name, value)
+        (rank(value), _format_order(name), name, value)
         for name, record in formats.items()
         if (value := record.get(key))
     ]
-    return min(found, key=lambda item: item[:3])[2:] if found else (None, None)
+    return min(found, key=lambda item: item[:2])[2:] if found else (None, None)
+
+
+def _earliest(formats, key):
+    """(format, value) of a per-format record field, by time, then traces first."""
+    return _first_format(formats, key, lambda value: value["ts"])
 
 
 def _fastest(formats):
     """(format, sustained window) with the highest sustained speed, then traces first."""
-    found = [
-        (-value["gs"], name != "traces", name, value)
-        for name, record in formats.items()
-        if (value := record.get("sustained"))
-    ]
-    return min(found, key=lambda item: item[:3])[2:] if found else (None, None)
+    return _first_format(formats, "sustained", lambda value: -value["gs"])
 
 
 def cross_day_findings(destination, *, code_sha256=None):
@@ -2191,8 +2197,10 @@ class _CrossDay:
 
     def __init__(self, coverage, metadata, captured_at):
         self.coverage, self.metadata, self.captured_at = coverage, metadata, captured_at
-        self.countries, self.type_days, self.country_days, self.seasons = {}, Counter(), Counter(), {}
-        self.operator_days = Counter()
+        self.countries, self.seasons = {}, {}
+        # Earlier days on which each type, allocation State, and operator designator
+        # appeared, by first-sighting scope.
+        self.days = {"type": Counter(), "country": Counter(), "operator": Counter()}
         self.events = []
 
     def _event(self, address, finding, aircraft, first, last, count, at, source):
@@ -2229,53 +2237,51 @@ class _CrossDay:
             typecode = reference.clean(self.metadata.get(address, {}).get("t"))
             if address not in self.countries:
                 self.countries[address] = identity_checks({"hex": address})["allocation_country"]
-            country = self.countries[address]
             # Any fix is presence; only a confirmed sighting can be a first one.
             _, present = _earliest(formats, "first_fix")
             sighted = {name: record["sighted"] for name, record in formats.items() if record.get("sighted")}
-            # Traces first, as _earliest breaks ties.
             designator = next(
                 (
                     formats[name]["designator"]
-                    for name in sorted(formats, key=lambda name: (name != "traces", name))
+                    for name in sorted(formats, key=_format_order)
                     if formats[name].get("designator")
                 ),
                 "",
             )
-            seen.append((address, typecode, country, designator, sighted))
-            for key in (("type", typecode), ("country", country), ("operator", designator)):
-                if key[1] and present:
+            values = {"type": typecode, "country": self.countries[address], "operator": designator}
+            seen.append((address, values, sighted))
+            for scope, value in values.items():
+                if value and present:
+                    key = (scope, value)
                     earliest[key] = min(earliest.get(key, (math.inf, "")), (present["ts"], address))
             source, sustained = _fastest(formats)
             if sustained and typecode:
                 records.append((sustained["ended_at"], address, source, typecode, sustained))
-        for address, typecode, country, designator, sighted in seen:
+        for address, values, sighted in seen:
             source, fix = _earliest(sighted, "fix")
-            first_type = bool(typecode) and earliest.get(("type", typecode), (0, None))[1] == address
-            first_country = bool(country) and earliest.get(("country", country), (0, None))[1] == address
-            first_operator = (
-                bool(designator) and earliest.get(("operator", designator), (0, None))[1] == address
-            )
-            if not fix or not (
-                (first_type and not self.type_days[typecode])
-                or (first_country and not self.country_days[country])
-                or (first_operator and not self.operator_days[designator])
+            first = {
+                scope: bool(value) and earliest.get((scope, value), (0, None))[1] == address
+                for scope, value in values.items()
+            }
+            if not fix or not any(
+                first[scope] and not counter[values[scope]] for scope, counter in self.days.items()
             ):
                 continue
             aircraft = _aircraft(address, fix, self.metadata)
+            # An aircraft of the type, State, or designator seen earlier the same day counts as a day.
             history = {
                 **base,
-                # An aircraft of the type or State seen earlier the same day counts as a day.
-                "type_days": self.type_days[typecode] + (not first_type) if typecode else None,
-                "country_days": self.country_days[country] + (not first_country) if country else None,
-                # The counts are the day's designator's: they hold only when the sighting's
-                # own callsign carries the same one.
-                "operator_days": self.operator_days[designator] + (not first_operator)
-                if designator and rules.callsign_designator(aircraft) == designator
-                else None,
+                **{
+                    f"{scope}_days": counter[values[scope]] + (not first[scope]) if values[scope] else None
+                    for scope, counter in self.days.items()
+                },
             }
+            # The operator counts are the day's designator's: they hold only when the
+            # sighting's own callsign carries the same one.
+            if rules.callsign_designator(aircraft) != values["operator"]:
+                history["operator_days"] = None
             confirmed = sighted[source]
-            for finding in rules.first_sighting(aircraft, history):
+            for finding in rules.first_sighting(aircraft, history, designator=values["operator"]):
                 self._event(
                     address,
                     finding,
@@ -2288,9 +2294,8 @@ class _CrossDay:
                 )
         for _, address, source, typecode, sustained in sorted(records, key=lambda item: item[:2]):
             self._record(day, address, source, typecode, sustained)
-        self.type_days.update({typecode for _, typecode, _, _, _ in seen} - {""})
-        self.country_days.update({country for _, _, country, _, _ in seen} - {None})
-        self.operator_days.update({designator for _, _, _, designator, _ in seen} - {""})
+        for scope, counter in self.days.items():
+            counter.update({values[scope] for _, values, _ in seen} - {"", None})
 
     def _record(self, day, address, source, typecode, sustained):
         aircraft = _aircraft(address, sustained["point"], self.metadata)
