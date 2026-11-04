@@ -1064,17 +1064,19 @@ class Detector:
                 # Private diagnostics; the tags carry no position or receiver value.
                 db.execute("DELETE FROM anomaly_observations WHERE ts<?", (now - ANOMALY_RETENTION,))
                 # An episode not found again while its window was in the buffer has ended.
+                # A winds-aloft day ends with its UTC day instead (_winds_aloft).
                 db.execute(
                     """UPDATE events SET evidence=json_set(evidence,'$.maneuver.state','ended',
                       '$.maneuver.end_reason','stale','$.maneuver.evaluated_at',MAX(last_seen+?,
                       COALESCE(json_extract(evidence,'$.maneuver.evaluated_at'),0)))
-                    WHERE last_seen<? AND last_seen>=? AND origin=?
+                    WHERE last_seen<? AND last_seen>=? AND origin=? AND kind!=?
                       AND json_extract(evidence,'$.maneuver.state')='active'""",
                     (
                         STALE_SECONDS,
                         now - TRACK_SECONDS - STALE_SECONDS,
                         now - TRACK_SECONDS - 3600,
                         LIVE_ORIGIN,
+                        winds.KIND,
                     ),
                 )
                 self.telemetry = defaultdict(
@@ -2208,8 +2210,9 @@ class Detector:
 
         The kind has no subject aircraft. Its row is saved on one eastbound aircraft
         seen that day, and later evaluations keep that aircraft (the open entry, else
-        the day's saved row) so the day stays one row. The row stays open through
-        the day and ends once, with end_reason "day_closed", after UTC midnight.
+        the day's saved row, which also survives a restart) so the day stays one row.
+        The row stays open through the day and ends once, with end_reason
+        "day_closed", after UTC midnight.
         """
         today = curation.utc_day(now)
         carrier = None
@@ -2222,26 +2225,39 @@ class Detector:
             finding = copy.deepcopy(entry["finding"])
             info = finding.evidence["maneuver"]
             if info.get("state") == "active":
-                info.update(state="ended", end_reason="day_closed")
+                info.update(
+                    state="ended", end_reason="day_closed", evaluated_at=max(info["evaluated_at"], now)
+                )
                 self._confirm(db, entry["a"], finding, now, entry["extra"])
             del self.multi[key]
         if now - self.winds_at < winds.INTERVAL:
             return
         self.winds_at = now
+        # A row of an earlier day left open, for example across a restart, ends here.
+        db.execute(
+            """UPDATE events SET evidence=json_set(evidence,'$.maneuver.state','ended',
+              '$.maneuver.end_reason','day_closed','$.maneuver.evaluated_at',
+              MAX(?,COALESCE(json_extract(evidence,'$.maneuver.evaluated_at'),0)))
+            WHERE kind=? AND origin=? AND json_valid(evidence)
+              AND json_extract(evidence,'$.maneuver.state')='active'
+              AND json_extract(evidence,'$.winds_aloft.day')<?""",
+            (now, winds.KIND, LIVE_ORIGIN, today),
+        )
+        saved = {}
 
         def choose(addresses):
-            # The aircraft saving the day's row must have a report in memory, or an open entry.
-            saved = carrier
-            if saved is None:
-                start = now - now % 86400
-                row = db.execute(
-                    """SELECT hex FROM events WHERE last_seen>=? AND kind=? AND origin=? AND json_valid(evidence)
-                    AND json_extract(evidence,'$.winds_aloft.day')=? ORDER BY id LIMIT 1""",
-                    (start, winds.KIND, LIVE_ORIGIN, today),
-                ).fetchone()
-                saved = row["hex"] if row else None
-            if saved in addresses and (saved in self.previous or (winds.KIND, saved) in self.multi):
-                return saved
+            # The day's carrier: the open entry's aircraft, else the saved row's, else the
+            # fastest eastbound aircraft with a report in memory.
+            if carrier is not None and carrier in addresses:
+                return carrier
+            row = db.execute(
+                """SELECT hex,evidence FROM events WHERE last_seen>=? AND kind=? AND origin=?
+                AND json_valid(evidence) AND json_extract(evidence,'$.winds_aloft.day')=? ORDER BY id LIMIT 1""",
+                (now - now % 86400, winds.KIND, LIVE_ORIGIN, today),
+            ).fetchone()
+            if row is not None and row["hex"] in addresses:
+                saved["evidence"] = json.loads(row["evidence"])
+                return row["hex"]
             chosen = next((address for address in addresses if address in self.previous), None)
             if chosen is None:
                 LOG.debug("Winds aloft: no eastbound aircraft of the day is in memory; evaluation skipped")
@@ -2256,8 +2272,14 @@ class Detector:
         previous, held = self.previous.get(primary), self.multi.get((winds.KIND, primary))
         if previous is not None:
             a, extra = previous["a"], _extra(previous["session"], previous["checks"])
-        else:
+        elif held is not None:
             a, extra = held["a"], held["extra"]
+        else:
+            # The saved row's aircraft is out of memory: its saved identity carries on.
+            # record() finds the row by its unchanged episode start.
+            evidence = saved["evidence"]
+            a = {**(evidence.get("aircraft") or {}), "hex": primary}
+            extra = {key: evidence.get(key) for key in ("encounter_start", "identity_checks")}
         finding.evidence["participants"] = [
             maneuvers.participant(
                 member["hex"],

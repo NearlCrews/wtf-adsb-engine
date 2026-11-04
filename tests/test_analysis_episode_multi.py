@@ -664,62 +664,113 @@ class AnomalyTagTests(unittest.TestCase):
         self.assertEqual(count, 0)
 
 
+NOON = 1_793_880_000.0  # 2026-11-05 12:00 UTC
+
+
 class WindsAloftCollectorTests(unittest.TestCase):
-    def test_level_jets_by_direction_make_one_row_per_day_that_ends_after_midnight(self):
+    def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        path = Path(directory.name) / "journal.db"
-        app.initialize(path)
-        detector = app.Detector(path)
-        noon = 1_793_880_000.0  # 2026-11-05 12:00 UTC
+        self.path = Path(directory.name) / "journal.db"
+        app.initialize(self.path)
+        lookup = patch.object(app.watchlists, "lookup", return_value=None)
+        lookup.start()
+        self.addCleanup(lookup.stop)
 
-        def poll(step, now, aircraft=True):
-            reports = [
-                {
-                    "hex": f"{'b' if east else 'c'}{i:05x}",
-                    "type": "adsb_icao",
-                    "seen": 0,
-                    "seen_pos": 0,
-                    "lat": LAT0 + i * 0.05 + (0.02 if east else 0),
-                    "lon": LON0,
-                    "alt_baro": 35000,
-                    "baro_rate": 0,
-                    "track": 90 if east else 270,
-                    "gs": (560 + i % 5) if east else (380 - i % 5),
-                    "messages": 100 + step,
-                }
-                for east in (True, False)
-                for i in range(40)
+    @staticmethod
+    def poll(detector, step, now, aircraft=True, without=()):
+        """40 level eastbound and 40 level westbound jets at FL350, or an empty poll."""
+        reports = [
+            {
+                "hex": f"{'b' if east else 'c'}{i:05x}",
+                "type": "adsb_icao",
+                "seen": 0,
+                "seen_pos": 0,
+                "lat": LAT0 + i * 0.05 + (0.02 if east else 0),
+                "lon": LON0,
+                "alt_baro": 35000,
+                "baro_rate": 0,
+                "track": 90 if east else 270,
+                "gs": (560 + i % 5) if east else (380 - i % 5),
+                "messages": 100 + step,
+            }
+            for east in (True, False)
+            for i in range(40)
+        ]
+        reports = [report for report in reports if report["hex"] not in without] if aircraft else []
+        detector.process({"now": now, "aircraft": reports}, now)
+
+    def rows(self):
+        with app.connect(self.path) as db:
+            return [
+                app.event_dict(row)
+                for row in db.execute("SELECT * FROM events WHERE kind='winds_aloft_day' ORDER BY id")
             ]
-            detector.process({"now": now, "aircraft": reports if aircraft else []}, now)
 
-        def rows():
-            with app.connect(path) as db:
-                return [
-                    app.event_dict(row)
-                    for row in db.execute("SELECT * FROM events WHERE kind='winds_aloft_day'")
-                ]
-
-        with patch.object(app.watchlists, "lookup", return_value=None):
-            poll(0, noon)
-            poll(1, noon + 600)
-            saved = rows()
-            self.assertEqual(len(saved), 1)
-            self.assertGreaterEqual(saved[0]["value"], 150)
-            evidence = saved[0]["evidence"]
-            self.assertEqual(evidence["winds_aloft"]["day"], "2026-11-05")
-            self.assertEqual(evidence["winds_aloft"]["east_addresses"], 40)
-            self.assertEqual(evidence["maneuver"]["state"], "active")
-            self.assertEqual(evidence["maneuver"]["evaluated_at"], noon + 600)
-            self.assertNotIn("lat", evidence["aircraft"])
-            self.assertTrue(evidence["participants"])
-            self.assertTrue(all("median_gs_kn" in item["measurements"] for item in evidence["participants"]))
-            # The UTC day closes: the row ends once, and no new row starts without samples.
-            poll(2, noon + 43200 + 60, aircraft=False)
-            saved = rows()
+    def test_level_jets_by_direction_make_one_row_per_day_that_ends_after_midnight(self):
+        detector = app.Detector(self.path)
+        self.poll(detector, 0, NOON)
+        self.poll(detector, 1, NOON + 600)
+        saved = self.rows()
+        self.assertEqual(len(saved), 1)
+        self.assertGreaterEqual(saved[0]["value"], 150)
+        evidence = saved[0]["evidence"]
+        self.assertEqual(evidence["winds_aloft"]["day"], "2026-11-05")
+        self.assertEqual(evidence["winds_aloft"]["east_addresses"], 40)
+        self.assertEqual(evidence["maneuver"]["state"], "active")
+        self.assertEqual(evidence["maneuver"]["evaluated_at"], NOON + 600)
+        self.assertEqual(evidence["maneuver"]["sample_count"], 160)
+        self.assertNotIn("lat", evidence["aircraft"])
+        self.assertTrue(evidence["participants"])
+        self.assertTrue(all("median_gs_kn" in item["measurements"] for item in evidence["participants"]))
+        # The UTC day closes: the row ends once, and no new row starts without samples.
+        self.poll(detector, 2, NOON + 43200 + 60, aircraft=False)
+        saved = self.rows()
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["evidence"]["maneuver"]["state"], "ended")
         self.assertEqual(saved[0]["evidence"]["maneuver"]["end_reason"], "day_closed")
+
+    def test_a_lull_keeps_the_row_open_until_midnight(self):
+        detector = app.Detector(self.path)
+        self.poll(detector, 0, NOON)
+        self.poll(detector, 1, NOON + 600)
+        # No reports for well over the buffer and stale windows: the track sweep runs.
+        for offset in (1500, 2100, 2700, 3300, 6000):
+            self.poll(detector, 2, NOON + 600 + offset, aircraft=False)
+            info = self.rows()[0]["evidence"]["maneuver"]
+            self.assertEqual(info["state"], "active", offset)
+        self.poll(detector, 3, NOON + 43200 + 30, aircraft=False)
+        (saved,) = self.rows()
+        self.assertEqual(saved["evidence"]["maneuver"]["state"], "ended")
+        self.assertEqual(saved["evidence"]["maneuver"]["end_reason"], "day_closed")
+        self.assertEqual(saved["evidence"]["maneuver"]["evaluated_at"], NOON + 43200 + 30)
+
+    def test_a_restarted_collector_continues_the_days_row_on_its_aircraft(self):
+        first = app.Detector(self.path)
+        self.poll(first, 0, NOON)
+        self.poll(first, 1, NOON + 600)
+        (before,) = self.rows()
+        carrier = before["hex"]
+        # A new collector over the same journal; the carrier no longer reports.
+        second = app.Detector(self.path)
+        self.poll(second, 2, NOON + 1200, without={carrier})
+        (after,) = self.rows()
+        self.assertEqual(after["id"], before["id"])
+        self.assertEqual(after["hex"], carrier)
+        info = after["evidence"]["maneuver"]
+        self.assertEqual((info["state"], info["evaluated_at"]), ("active", NOON + 1200))
+        self.assertEqual(info["episode_start"], before["evidence"]["maneuver"]["episode_start"])
+
+    def test_an_open_row_from_an_earlier_day_ends_on_the_first_pass(self):
+        first = app.Detector(self.path)
+        self.poll(first, 0, NOON)
+        self.poll(first, 1, NOON + 600)
+        second = app.Detector(self.path)
+        self.poll(second, 2, NOON + 86400, aircraft=False)
+        (saved,) = self.rows()
+        info = saved["evidence"]["maneuver"]
+        self.assertEqual((info["state"], info["end_reason"]), ("ended", "day_closed"))
+        self.assertEqual(info["evaluated_at"], NOON + 86400)
 
 
 class TelemetryFieldTests(unittest.TestCase):

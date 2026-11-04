@@ -63,6 +63,7 @@ class Evaluate(unittest.TestCase):
         info = finding.evidence["maneuver"]
         self.assertEqual(info["kind"], "winds_aloft_day")
         self.assertEqual(info["evaluated_at"], self.now)
+        self.assertEqual(info["sample_count"], 70)
         self.assertEqual(info["episode_start"], self.now - 3600)
         self.assertFalse(info["quality_review_required"])
         # No positions reach the evidence.
@@ -75,6 +76,11 @@ class Evaluate(unittest.TestCase):
         self.assertIsNone(winds.evaluate(self.db, self.now))
         self.db.execute("DELETE FROM day_speed_samples")
         self.fill(east_gs=470, west_gs=400)
+        self.assertIsNone(winds.evaluate(self.db, self.now))
+
+    def test_the_threshold_compares_the_unrounded_difference(self):
+        # Medians 527.5 and 378.0 differ by 149.5 kn, which would round to 150.
+        self.fill(east_gs=525.5)
         self.assertIsNone(winds.evaluate(self.db, self.now))
 
     def test_only_the_current_utc_day_counts(self):
@@ -92,7 +98,7 @@ class Evaluate(unittest.TestCase):
         for i in range(winds.MAX_VALUES + 10):
             winds.remember(self.db, report("abc123", 90, 400 + i), self.now + i)
         row = self.db.execute("SELECT samples, values_json FROM day_speed_samples").fetchone()
-        self.assertEqual(row[0], winds.MAX_VALUES)
+        self.assertEqual(row[0], winds.MAX_VALUES + 10)
         self.assertEqual(len(json.loads(row[1])), winds.MAX_VALUES)
 
     def test_a_chooser_picks_the_carrier_and_leaves_it_out_of_the_participants(self):
@@ -154,6 +160,14 @@ class CachedWind(unittest.TestCase):
             wind,
             {"speed_kn": 135.5, "direction_deg": 265.0, "source": "open-meteo", "hour": "2025-11-05T12:00"},
         )
+
+    def test_a_newer_cell_cached_for_another_day_is_not_used(self):
+        self.db.execute(
+            "INSERT INTO wind_cache VALUES (?,?,?,?,?)",
+            (40.0, -80.0, "2025-11-06", self.now, json.dumps({"time": [self.now], "levels": {}})),
+        )
+        wind = winds.cached_wind(self.db, "2025-11-05", "2025-11-05T12:00", self.now)
+        self.assertEqual(wind["speed_kn"], 135.5)
 
     def test_a_missing_day_or_empty_cache_gives_none(self):
         self.assertIsNone(winds.cached_wind(self.db, "2025-11-06", "2025-11-06T12:00", self.now))

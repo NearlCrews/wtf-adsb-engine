@@ -3,7 +3,8 @@
 Each direct ADS-B report from a level jet at or above the floor, flying roughly
 east or west, adds its ground speed to that address's row for the UTC day
 (``day_speed_samples``). A row keeps up to MAX_VALUES speeds and their median,
-the latest altitude, and its first and latest report times; it holds no position. Once both directions have MIN_ADDRESSES addresses, a
+its report count, the latest altitude, and its first and latest report times; it
+holds no position. Once both directions have MIN_ADDRESSES addresses, a
 median eastbound speed at least MIN_ASYMMETRY_KN above the westbound one makes
 the day's ``winds_aloft_day`` finding. The wind itself is never measured: when
 the wind worker has cached an Open-Meteo forecast, its 250 hPa speed and
@@ -66,10 +67,11 @@ def remember(db, report, stamp):
         return
     day, address = utc_day(stamp), str(report["hex"]).lower()
     row = db.execute(
-        "SELECT values_json FROM day_speed_samples WHERE day=? AND hex=? AND direction=?",
+        "SELECT samples, values_json FROM day_speed_samples WHERE day=? AND hex=? AND direction=?",
         (day, address, direction),
     ).fetchone()
-    values = (json.loads(row[0]) if row else [])[-(MAX_VALUES - 1) :] + [number(report["gs"])]
+    # The median reads the latest MAX_VALUES speeds; samples counts every qualifying report.
+    values = (json.loads(row[1]) if row else [])[-(MAX_VALUES - 1) :] + [number(report["gs"])]
     db.execute(
         "INSERT INTO day_speed_samples (day,hex,direction,gs,alt_baro,first_ts,ts,samples,values_json) "
         "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(day,hex,direction) DO UPDATE SET "
@@ -83,7 +85,7 @@ def remember(db, report, stamp):
             number(report.get("alt_baro")),
             stamp,
             stamp,
-            len(values),
+            (row[0] if row else 0) + 1,
             json.dumps(values),
         ),
     )
@@ -103,19 +105,19 @@ def evaluate(db, now, wind_lookup=None, *, choose=None):
     """
     day = utc_day(now)
     rows = db.execute(
-        "SELECT hex, direction, gs, first_ts, ts FROM day_speed_samples WHERE day=? "
+        "SELECT hex, direction, gs, first_ts, ts, samples FROM day_speed_samples WHERE day=? "
         "ORDER BY direction, gs DESC, hex",
         (day,),
     ).fetchall()
-    east = [(h, gs) for h, d, gs, _, _ in rows if d == "east"]
-    west = [(h, gs) for h, d, gs, _, _ in rows if d == "west"]
+    east = [(h, gs) for h, d, gs, *_ in rows if d == "east"]
+    west = [(h, gs) for h, d, gs, *_ in rows if d == "west"]
     if len(east) < MIN_ADDRESSES or len(west) < MIN_ADDRESSES:
         return None
     east_median = statistics.median(gs for _, gs in east)
     west_median = statistics.median(gs for _, gs in west)
-    asymmetry = round(east_median - west_median)
-    if asymmetry < MIN_ASYMMETRY_KN:
+    if east_median - west_median < MIN_ASYMMETRY_KN:
         return None
+    asymmetry = round(east_median - west_median)
     primary = east[0][0] if choose is None else choose([h for h, _ in east])
     if primary is None:
         return None
@@ -147,7 +149,7 @@ def evaluate(db, now, wind_lookup=None, *, choose=None):
         asymmetry,
         "kn",
         evaluated_at=now,
-        sample_count=len(east) + len(west),
+        sample_count=sum(row[5] for row in rows),
         episode_start=started,
     )
     finding.why = (
@@ -171,10 +173,12 @@ def cached_wind(db, day, hour, now):
     """The cached Open-Meteo wind at 250 hPa for an hour, or None.
 
     The wind worker caches forecasts for aircraft grid cells; the newest cell
-    stands in for the area. Only the speed, direction, source, and hour are
+    cached for the day stands in for the area. Only the speed, direction, source, and hour are
     returned, never the cell's coordinates.
     """
-    cell = db.execute("SELECT lat, lon FROM wind_cache ORDER BY fetched_at DESC LIMIT 1").fetchone()
+    cell = db.execute(
+        "SELECT lat, lon FROM wind_cache WHERE day=? ORDER BY fetched_at DESC LIMIT 1", (day,)
+    ).fetchone()
     if cell is None:
         return None
     found = wind.cached(db, cell[0], cell[1], day, now)
