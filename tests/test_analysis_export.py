@@ -330,7 +330,9 @@ class NativeTests(unittest.TestCase):
         with app.connect(self.path) as database:
             for day in ("2026-10-03", "2026-10-04", "2026-10-05"):
                 database.execute("INSERT OR REPLACE INTO coverage VALUES (?,3600,1)", (day,))
-                database.execute("INSERT OR REPLACE INTO daily VALUES (?,?,?)", (day, "a00001", "C172"))
+                database.execute(
+                    "INSERT OR REPLACE INTO daily(day,hex,typecode) VALUES (?,?,?)", (day, "a00001", "C172")
+                )
         counts = self.collector.snapshot(NOW + 80)[0]["observation"]["context"]["novelty"]
         self.assertEqual(counts, {"coverage_days": 1, "type_days": {"C172": 1}})
 

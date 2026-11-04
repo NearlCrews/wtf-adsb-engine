@@ -239,6 +239,10 @@ def initialize(path=DATABASE):
           season TEXT NOT NULL, typecode TEXT NOT NULL, hex TEXT NOT NULL,
           max_gs REAL NOT NULL, updated_at REAL NOT NULL, PRIMARY KEY(season,typecode,hex));
         """)
+        # Journals created before the operator designator was recorded gain the column here.
+        if "designator" not in {row[1] for row in db.execute("PRAGMA table_info(daily)")}:
+            db.execute("ALTER TABLE daily ADD COLUMN designator TEXT NOT NULL DEFAULT ''")
+        db.execute("CREATE INDEX IF NOT EXISTS daily_designator ON daily(designator,day)")
         if meta(db, "installed_at") is None:
             put_meta(db, "installed_at", time.time())
         if meta(db, SEASON_SINCE) is None:
@@ -417,14 +421,20 @@ def remember(db, a, first, last, observations=1, *, performance=True, band=0):
             band,
         ),
     )
+    # Only an airline-style callsign whose designator the operator table names records an operator.
+    callsign = str(a.get("flight") or "").strip()
+    designator = ""
+    if rules.AIRLINE_CALLSIGN.fullmatch(callsign) and reference.operator_name(callsign[:3]):
+        designator = callsign[:3]
     for stamp in {first, last}:
         day = datetime.fromtimestamp(stamp, timezone.utc).date().isoformat()
         db.execute(
-            """INSERT INTO daily VALUES (?,?,?) ON CONFLICT(day,hex) DO UPDATE SET typecode=
+            """INSERT INTO daily VALUES (?,?,?,?) ON CONFLICT(day,hex) DO UPDATE SET typecode=
             CASE WHEN ?>=(SELECT last_seen FROM aircraft WHERE hex=excluded.hex)
               THEN COALESCE(NULLIF(excluded.typecode,''),daily.typecode)
-              ELSE COALESCE(NULLIF(daily.typecode,''),excluded.typecode) END""",
-            (day, address, a.get("t", ""), last),
+              ELSE COALESCE(NULLIF(daily.typecode,''),excluded.typecode) END,
+            designator=CASE WHEN daily.designator='' THEN excluded.designator ELSE daily.designator END""",
+            (day, address, a.get("t", ""), designator, last),
         )
 
 

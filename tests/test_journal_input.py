@@ -1,5 +1,6 @@
 """Journal health gates evidence delivery without changing the source journal."""
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -130,6 +131,39 @@ class JournalInputTests(unittest.TestCase):
             self.assertIsNone(runtime.store.checkpoint("journal"))
             self.assertEqual(runtime.store.state()["head_sequence"], 0)
             self.assertFalse(runtime.store.state()["health"]["ready"])
+
+
+class DailyDesignator(unittest.TestCase):
+    def test_column_added_to_an_old_journal_and_written_by_remember(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "journal.sqlite3"
+            old = sqlite3.connect(path)
+            old.execute("CREATE TABLE daily (day TEXT, hex TEXT, typecode TEXT, PRIMARY KEY(day,hex))")
+            old.commit()
+            old.close()
+            app.initialize(path)
+            db = app.connect(path)
+            self.addCleanup(db.close)
+            columns = [row[1] for row in db.execute("PRAGMA table_info(daily)")]
+            self.assertIn("designator", columns)
+            report = {
+                "hex": "a9067b",
+                "type": "adsb_icao",
+                "r": "N123DL",
+                "t": "A321",
+                "flight": "DAL1234 ",
+                "lat": 42.5,
+                "lon": -83.4,
+                "alt_baro": 35000,
+                "gs": 440,
+            }
+            app.remember(db, report, 1_700_000_000.0, 1_700_000_010.0)
+            self.assertEqual(
+                db.execute("SELECT designator FROM daily WHERE hex='a9067b'").fetchone()[0], "DAL"
+            )
+            report["flight"] = "N123DL"
+            app.remember(db, {**report, "hex": "a9067c"}, 1_700_000_000.0, 1_700_000_010.0)
+            self.assertEqual(db.execute("SELECT designator FROM daily WHERE hex='a9067c'").fetchone()[0], "")
 
 
 if __name__ == "__main__":
