@@ -147,7 +147,7 @@ class DailyDesignator(unittest.TestCase):
             self.addCleanup(db.close)
             columns = [row[1] for row in db.execute("PRAGMA table_info(daily)")]
             self.assertIn("designator", columns)
-            report = {
+            airliner = {
                 "hex": "a9067b",
                 "type": "adsb_icao",
                 "r": "N123DL",
@@ -158,13 +158,39 @@ class DailyDesignator(unittest.TestCase):
                 "alt_baro": 35000,
                 "gs": 440,
             }
-            app.remember(db, report, 1_700_000_000.0, 1_700_000_010.0)
+            app.remember(db, airliner, 1_700_000_000.0, 1_700_000_010.0)
             self.assertEqual(
                 db.execute("SELECT designator FROM daily WHERE hex='a9067b'").fetchone()[0], "DAL"
             )
-            report["flight"] = "N123DL"
-            app.remember(db, {**report, "hex": "a9067c"}, 1_700_000_000.0, 1_700_000_010.0)
+            app.remember(
+                db, {**airliner, "hex": "a9067c", "flight": "N123DL"}, 1_700_000_000.0, 1_700_000_010.0
+            )
             self.assertEqual(db.execute("SELECT designator FROM daily WHERE hex='a9067c'").fetchone()[0], "")
+
+    def test_the_first_designator_of_the_day_is_kept_and_unknown_ones_are_blank(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "journal.sqlite3"
+            app.initialize(path)
+            db = app.connect(path)
+            self.addCleanup(db.close)
+            airliner = {"hex": "a9067b", "type": "adsb_icao", "r": "N123DL", "t": "A321"}
+
+            def designator(address):
+                return db.execute("SELECT designator FROM daily WHERE hex=?", (address,)).fetchone()[0]
+
+            # No callsign first, then one: the blank row takes the designator.
+            app.remember(db, airliner, 1_700_000_000.0, 1_700_000_000.0)
+            self.assertEqual(designator("a9067b"), "")
+            app.remember(db, {**airliner, "flight": "DAL1234"}, 1_700_000_010.0, 1_700_000_010.0)
+            self.assertEqual(designator("a9067b"), "DAL")
+            # Once set, a later designator the same day does not replace it.
+            app.remember(db, {**airliner, "flight": "UAL99"}, 1_700_000_020.0, 1_700_000_020.0)
+            self.assertEqual(designator("a9067b"), "DAL")
+            # A well-formed airline callsign whose designator the table does not list.
+            app.remember(
+                db, {**airliner, "hex": "a9067c", "flight": "ZZQ123"}, 1_700_000_000.0, 1_700_000_000.0
+            )
+            self.assertEqual(designator("a9067c"), "")
 
 
 class FirstOperatorBaseline(unittest.TestCase):

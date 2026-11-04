@@ -169,9 +169,10 @@ class FirstOperatorHere(unittest.TestCase):
             "first_operator_here", self.kinds_of({**self.AIRCRAFT, "flight": "N123DL"}, self.history())
         )
         light = {**self.AIRCRAFT, "t": "C172"}
-        self.assertIn("first_operator_here", self.kinds_of(light, self.history()))
         # The packaged tests carry no type or identity tables, so a piston type and a known
-        # designator stand in for them; a fresh generation keeps the memoized checks apart.
+        # designator stand in for them; a fresh generation keeps the memoized checks apart,
+        # and clear_cache drops them afterward.
+        self.addCleanup(reference.clear_cache)
         with (
             patch.object(reference, "GENERATION", -1),
             patch.object(reference, "type_info", return_value={"engine_type": "P"}),
