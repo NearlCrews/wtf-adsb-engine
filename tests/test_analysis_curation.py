@@ -387,5 +387,94 @@ class UnlistedAddressGates(unittest.TestCase):
         self.assertEqual([rule for rule in self.rules(settled) if rule.startswith("registry_")], [])
 
 
+def operator_first(identifier, designator, *, day=0, address=None):
+    event = finding(identifier, "first_operator_here", value=60, address=address, day=day)
+    event["evidence"]["aircraft"]["flight"] = f"{designator}123"
+    event["evidence"]["first_sighting"] = {
+        "scope": "operator",
+        "designator": designator,
+        "operator": designator,
+        "coverage_days": 60,
+        "since": "2026-08-01",
+    }
+    return event
+
+
+class OperatorFirsts(unittest.TestCase):
+    """An operator first is keyed by its designator, never by the type that flies it."""
+
+    def test_the_subtopic_is_the_designator(self):
+        self.assertEqual(curation.facts(operator_first(1, "DAL"))["subtopic"], "operator:DAL")
+        # Without the block, the callsign's own designator names it.
+        event = operator_first(2, "DAL")
+        del event["evidence"]["first_sighting"]
+        with patch.object(reference, "operator_name", lambda code: "Delta" if code == "DAL" else None):
+            self.assertEqual(curation.facts(event)["subtopic"], "operator:DAL")
+        self.assertEqual(curation.facts(finding(3, "first_type_here"))["subtopic"], "type:C172")
+
+    def test_only_a_second_first_for_the_same_designator_repeats(self):
+        earlier = curation.choose([group(operator_first(1, "DAL", address="aaaaaa"))])
+        history = [curation.story_entry(earlier["selected"][0])]
+        for designator, disposition in (("UAL", "selected"), ("DAL", "first_repeat")):
+            with self.subTest(designator=designator):
+                later = group(operator_first(2, designator, day=40, address="bbbbbb"))
+                row = curation.choose([later], history=history)["decisions"][0]
+                self.assertEqual(row["disposition"], disposition)
+
+    def test_a_routine_type_does_not_hold_an_operator_first(self):
+        def routine(day):
+            return {"coverage_days": 60, "type_days": {"C172": 40}}
+
+        earlier = {
+            "addresses": ["aaaaaa"],
+            "kind": "foreign_military",
+            "day": "2026-09-26",
+            "start": START - 5 * 86400,
+            "type": "C172",
+            "subtopic": "type:C172",
+            "routine_type": True,
+        }
+        candidate = group(operator_first(2, "UAL", address="bbbbbb"))
+        result = curation.choose([candidate], history=[earlier], novelty=routine)
+        row = result["decisions"][0]
+        self.assertEqual(row["disposition"], "selected")
+        self.assertFalse(row["routine_type"])
+        # An operator first on a routine type does not hold a later type story either.
+        operator_story = curation.story_entry(result["selected"][0])
+        later = {**earlier, "addresses": ["cccccc"], "routine_type": False, "start": START + 86400}
+        self.assertIsNone(curation.StoryLog([operator_story]).repeat(later))
+        self.assertEqual(curation.StoryLog([earlier]).repeat(later), "routine_type")
+
+
+class RacetrackNearRunway(unittest.TestCase):
+    def test_a_racetrack_tagged_near_a_runway_scores_50_and_is_not_a_story(self):
+        plain = finding(1, "racetrack_orbit", value=6)
+        self.assertEqual(plain["selection"]["score"], 80)
+        self.assertTrue(plain["selection"]["story_eligible"])
+        for where in ("tag", "evidence"):
+            with self.subTest(where=where):
+                event = finding(2, "racetrack_orbit", value=6)
+                if where == "tag":
+                    event["evidence"]["maneuver"]["context_tags"] = ["airport_context"]
+                else:
+                    event["evidence"]["airport_context"] = {"runway": "09"}
+                event["selection"] = selection.assess(event, {})
+                self.assertEqual(event["selection"]["score"], 50)
+                self.assertFalse(event["selection"]["story_eligible"])
+                self.assertLessEqual(curation.rate(event)["interest"], 8)
+                self.assertGreater(curation.rate(plain)["interest"], 8)
+
+
+class EpisodeScores(unittest.TestCase):
+    def test_an_episode_kind_with_its_own_score_keeps_it(self):
+        self.assertEqual(finding(1, "holding_stack")["selection"]["score"], 78)
+        self.assertEqual(finding(2, "winds_aloft_day")["selection"]["score"], 80)
+        for kind in ("racetrack_orbit", "aerobatic_practice", "survey_grid", "descending_spiral"):
+            with self.subTest(kind=kind):
+                self.assertEqual(finding(3, kind, value=6)["selection"]["score"], 80)
+        # An unconfirmed episode is still capped for review.
+        self.assertEqual(finding(4, "holding_stack", confirmed=False)["selection"]["score"], 60)
+
+
 if __name__ == "__main__":
     unittest.main()

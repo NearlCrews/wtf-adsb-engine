@@ -42,9 +42,20 @@ and evidence contract versions are tracked separately.
   enrichment writes the journal at the same moment. The collector now takes the
   journal's write lock before it reads, so it waits for another writer instead
   of failing at once.
+- A confirmed `holding_stack` episode scores its fixed 78. The episode rule
+  had raised it to 80.
 
 ### Changed
 
+- Curation keys a `first_operator_here` story by its designator
+  (`operator:<designator>`), not by the aircraft type. A later first for another
+  operator on the same type is no longer held as `first_repeat`; a second first
+  for the same designator still is. A locally routine type no longer holds an
+  operator first, and an operator first no longer holds a later type story as
+  `routine_type`.
+- A `racetrack_orbit` tagged `airport_context`, or carrying an
+  `airport_context` evidence block, scores at most 50 and its curation interest
+  at most 8, as circuit shapes near a runway already do.
 - A failed projection pass or output delivery now logs a warning with the
   exception class and a short message, so operators can tell a stale receiver
   from an unavailable one or a schema failure. URLs, absolute paths, keys,

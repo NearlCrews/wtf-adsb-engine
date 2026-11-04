@@ -198,6 +198,9 @@ its first day.
 | `coverage_days` | Earlier days with at least an hour of coverage that record designators |
 | `since` | The first such day in the retained records, or null |
 
+Curation keys an operator first by its designator: one story per designator,
+whatever type flies it. A locally routine type does not hold it.
+
 ### Aerobatic and racetrack metric keys
 
 These keys appear in the finding's `maneuver` block.
@@ -232,7 +235,8 @@ lines 2 to 15 NM apart.
 
 A racetrack can carry the `tanker_type`, `military_flag`, and `airport_context`
 tags. `airport_context` means the racetrack was centered within 10 NM of a mapped
-runway.
+runway. A racetrack with that tag, or with an `airport_context` evidence block,
+scores at most 50, below the story threshold of 75.
 
 ### Other new evidence keys
 

@@ -362,6 +362,12 @@ FIXED_SCORES = kinds.table(
         "unregistered_address",
     ),
 )
+# Episode kinds scored by their own rule when their maneuver block is read; any other
+# episode scores 80 (95 for a live transponder status).
+EPISODE_SCORES = {
+    "holding_stack": lambda evidence: FIXED_SCORES["holding_stack"][0],
+    "winds_aloft_day": lambda evidence: FIXED_SCORES["winds_aloft_day"][0],
+}
 # A novelty claim (first sighting, notable variant) needs two reports at least 8 s apart.
 NOVELTY_MIN_HITS = 2
 NOVELTY_MIN_SECONDS = 8
@@ -516,7 +522,8 @@ def assess(event, profiles=None, *, independent=False, now=None):
         ):
             review = True
             reasons.append("Consecutive above-threshold reports have not been established")
-        score = 95 if kind.startswith(LIVE_SQUAWK_PREFIX) else 80
+        rule = EPISODE_SCORES.get(kind)
+        score = rule(evidence) if rule else (95 if kind.startswith(LIVE_SQUAWK_PREFIX) else 80)
         private = private and review
         if review:
             score = min(score, 60)
@@ -525,8 +532,7 @@ def assess(event, profiles=None, *, independent=False, now=None):
                 reasons.append("Episode has not met its confirmation window")
     if kind.startswith(ARCHIVE_SQUAWK_PREFIX):
         score, review, private = min(score, 60), True, True
-    tags = curation.context_tags(evidence)
-    if kind in curation.CIRCUIT_KINDS and (evidence.get("airport_context") or tags & curation.AIRPORT_TAGS):
+    if curation.near_runway(kind, evidence):
         score = min(score, 50)
         reasons.append("Observed near a runway's circuit or approach; retained as routine-context evidence")
     if evidence.get("quality_flags"):

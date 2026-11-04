@@ -16,6 +16,7 @@ from .rules import (
     NORM_KINDS,  # noqa: F401 - autopilot reads it here with the other kind sets
     RATED_KINDS,
     SQUAWK_PREFIXES,
+    callsign_designator,
     number,
     speed_plausible,
     type_envelope,
@@ -87,10 +88,15 @@ SUSTAINED_FIELDS = (
     "sustained_expected_altitude_change_ft",
 )
 IDENTITY_KINDS = set(kinds.where(identity=True))
+# Identity kinds about the airframe's type: an operator first is keyed by the operator,
+# so a locally routine type never holds it.
+TYPE_IDENTITY_KINDS = frozenset(IDENTITY_KINDS - {"first_operator_here"})
 DATA_QUALITY_KINDS = kinds.where(data_quality=True)
 # Orbit shapes whose interest falls to context near a runway.
 CIRCUIT_KINDS = kinds.where(circuit_shape=True)
 AIRPORT_TAGS = frozenset({"runway_circuit_context", "airport_descent_context"})
+# A racetrack centered near a mapped runway is routine holding or approach practice.
+RACETRACK_AIRPORT_TAGS = frozenset({"airport_context"})
 # A balloon episode explains these same-encounter readings.
 BALLOON_FOLDS = kinds.where(balloon_fold=True)
 # Live status kinds by code or emergency field; priority declarations (kinds.PRIORITY_STATUSES)
@@ -115,7 +121,7 @@ ADDRESS = re.compile(r"~?[0-9a-f]{6}")
 # Editorial weights, not probabilities or aircraft operating limits (each kind's weight and
 # its reason are in kinds).
 INTEREST = kinds.table("interest")
-# One story ever per first-sighting kind and subtopic (type or allocation State).
+# One story ever per first-sighting kind and subtopic (type, allocation State, or operator).
 FIRST_KINDS = kinds.where(first_sighting=True)
 
 
@@ -175,6 +181,17 @@ def context_tags(evidence):
     for block in (evidence, evidence.get("maneuver"), evidence.get("pattern")):
         tags |= _strings(_mapping(block).get("context_tags"))
     return tags
+
+
+def near_runway(kind, evidence, tags=None):
+    """An orbit shape whose interest falls to routine context near a runway."""
+    evidence = _mapping(evidence)
+    tags = context_tags(evidence) if tags is None else tags
+    if kind in CIRCUIT_KINDS:
+        return bool(evidence.get("airport_context") or tags & AIRPORT_TAGS)
+    return kind == "racetrack_orbit" and bool(
+        evidence.get("airport_context") or tags & RACETRACK_AIRPORT_TAGS
+    )
 
 
 def _code(evidence):
@@ -621,6 +638,10 @@ def facts(event):
     if kind == "vintage":
         # Old airframes of different types still read as one kind of story.
         subtopic = "vintage"
+    elif kind == "first_operator_here":
+        # One first per operator, whatever type flies it.
+        raw = _mapping(evidence.get("first_sighting")).get("designator") or callsign_designator(aircraft)
+        subtopic = "operator:" + raw if isinstance(raw, str) and raw else "aircraft:" + address
     elif kind in IDENTITY_KINDS:
         subtopic = (
             "variant:" + variant
@@ -694,7 +715,7 @@ def _vintage_pair(row, other, routine):
 def _routine_pair(row, other, routine):
     # A type routine on either story's own date holds both, so earlier and later
     # stories agree whichever is checked first.
-    return other["kind"] in IDENTITY_KINDS and (row["type"] in routine or other.get("routine_type"))
+    return other["kind"] in TYPE_IDENTITY_KINDS and (row["type"] in routine or other.get("routine_type"))
 
 
 # The repeat policy, checked in order: (reason, index, row kinds it applies to (None
@@ -708,7 +729,7 @@ REPEAT_RULES = (
     ("identity_repeat", "address", None, _identity_pair, IDENTITY_COOLDOWN),
     ("kind_repeat", "address", None, _kind_pair, STORY_COOLDOWN),
     ("vintage_repeat", "address", IDENTITY_KINDS, _vintage_pair, VINTAGE_COOLDOWN),
-    ("routine_type", "type", IDENTITY_KINDS, _routine_pair, ROUTINE_COOLDOWN),
+    ("routine_type", "type", TYPE_IDENTITY_KINDS, _routine_pair, ROUTINE_COOLDOWN),
     (
         "type_repeat",
         "type",
@@ -741,7 +762,7 @@ REPEAT_REASONS = {
     "routine_type": f"This locally routine type had an identity story within {_days(ROUTINE_COOLDOWN)}",
     "variant_repeat": f"This aircraft variant had a story within {_days(VARIANT_COOLDOWN)}",
     "vintage_repeat": f"This vintage airframe had an identity story within {_days(VINTAGE_COOLDOWN)}",
-    "first_repeat": "A first sighting of this type or allocation State already had its story",
+    "first_repeat": "A first sighting of this type, allocation State, or operator already had its story",
     "series_repeat": f"A story that reads the same way on any aircraft ran within {_days(SERIES_COOLDOWN)}",
 }
 
@@ -1025,7 +1046,7 @@ def rate(event, *, descents=None, rarity=None):
         interest = vintage_interest(number(event.get("value")), rarity)
     elif topic(kind) in {"circling", "passes"}:
         interest += min(12, max(0, int(max(loops, passes) - 3) * 2))
-    if kind in CIRCUIT_KINDS and (evidence.get("airport_context") or tags & AIRPORT_TAGS):
+    if near_runway(kind, evidence, tags):
         interest = min(interest, 8)
     if event.get("verdict") == "keep":
         interest = max(40, interest)
@@ -1189,7 +1210,7 @@ def _rate_group(key, day, first, group, *, counts, routine, descents, removed, p
             # A published exception keeps its standing while its own evidence holds.
             row["exceptional"] = True
         row["story_key"] = story_key(event, key)
-        row["routine_type"] = bool(row["type"] in routine and row["kind"] in IDENTITY_KINDS)
+        row["routine_type"] = bool(row["type"] in routine and row["kind"] in TYPE_IDENTITY_KINDS)
         row["rarity"] = type_rarity
         if folded and row["kind"] in BALLOON_FOLDS:
             row["context_only"] = True
@@ -1330,7 +1351,7 @@ def choose(groups, *, audit=True, history=(), novelty=None, descents=None):
         if (entry.get("removed") or entry.get("withdrawn")) and entry.get("source")
     }
     for entry in history:
-        if "routine_type" not in entry and entry.get("kind") in IDENTITY_KINDS and entry.get("type"):
+        if "routine_type" not in entry and entry.get("kind") in TYPE_IDENTITY_KINDS and entry.get("type"):
             # A prior story without its saved flag gets the routine status of its own date.
             entry = {**entry, "routine_type": entry["type"] in routine_types(_novelty(novelty, entry["day"]))}
         # Every prior story constrains repeats on earlier and later days alike.
