@@ -238,16 +238,22 @@ STALE_CHECK_SECONDS = 30 * 86400
 def stale_check(event, now=None):
     """Whether a finding's unsettled second-source check has gone stale.
 
-    A pending or failed check (enrichment_rules.type_check_state) on a finding
-    first seen more than STALE_CHECK_SECONDS before `now` (default: the current
-    time) is stale: it no longer holds selection and counts as unavailable. A
-    typecheck.RECHECK_KINDS finding never goes stale, since a registry that never
-    answered says nothing about whether it lists the address.
+    A failed or outdated check (enrichment_rules.type_check_state pending or
+    failed, with a type_check block present) on a finding first seen more than
+    STALE_CHECK_SECONDS before `now` (default: the current time) is stale: it no
+    longer holds selection and counts as unavailable. A finding with no check at
+    all was never asked about, so it keeps holding, and a typecheck.RECHECK_KINDS
+    finding never goes stale, since a registry that never answered says nothing
+    about whether it lists the address.
     """
     if event.get("kind") in typecheck.RECHECK_KINDS:
         return False
+    evidence = event.get("evidence") if isinstance(event.get("evidence"), dict) else {}
+    if not evidence.get("type_check"):
+        # Never checked: the absence of a check says nothing, so the hold stays.
+        return False
     first = number(event.get("first_seen"))
-    if first is None or enrichment_rules.type_check_state(event.get("evidence")) not in {"pending", "failed"}:
+    if first is None or enrichment_rules.type_check_state(evidence) not in {"pending", "failed"}:
         return False
     return (time.time() if now is None else now) - first > STALE_CHECK_SECONDS
 

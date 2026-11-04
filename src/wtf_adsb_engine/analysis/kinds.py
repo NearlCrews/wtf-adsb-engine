@@ -763,7 +763,7 @@ KINDS = {
             database_basis=True,
             interest=24,
             fixed_score=(
-                70,
+                75,
                 "Deterministic identity checks disagree; this is a data finding, not an identity claim",
             ),
         ),

@@ -302,24 +302,32 @@ class StaleTypeChecks(unittest.TestCase):
             event["evidence"]["type_check"] = {"state": state, "source": "adsbdb", "checked_at": START}
         return event
 
-    def test_a_check_pending_for_thirty_days_stops_holding_and_counts_as_unavailable(self):
+    def test_a_check_failed_for_thirty_days_stops_holding_and_counts_as_unavailable(self):
         self.assertEqual(curation.STALE_CHECK_SECONDS, 30 * 86400)
         for kind in ("type_speed_mismatch", "first_type_here"):
-            for state in (None, "failed"):
-                with self.subTest(kind=kind, state=state):
-                    fresh, stale = self.event(kind, state, 2), self.event(kind, state, 31)
-                    self.assertEqual(curation.type_hold(fresh, now=self.NOW)[0], "type_check_pending")
-                    self.assertIsNone(curation.type_hold(stale, now=self.NOW))
-                    self.assertTrue(curation.stale_check(stale, now=self.NOW))
-                    self.assertFalse(curation.stale_check(fresh, now=self.NOW))
+            with self.subTest(kind=kind):
+                fresh, stale = self.event(kind, "failed", 2), self.event(kind, "failed", 31)
+                self.assertEqual(curation.type_hold(fresh, now=self.NOW)[0], "type_check_pending")
+                self.assertIsNone(curation.type_hold(stale, now=self.NOW))
+                self.assertTrue(curation.stale_check(stale, now=self.NOW))
+                self.assertFalse(curation.stale_check(fresh, now=self.NOW))
         # A stale check leaves a performance claim uncorroborated; a settled one is never stale.
         rules = [
-            rule for rule, _ in curation.gates(self.event("type_speed_mismatch", None, 31), now=self.NOW)
+            rule for rule, _ in curation.gates(self.event("type_speed_mismatch", "failed", 31), now=self.NOW)
         ]
         self.assertIn("type_uncorroborated", rules)
         settled = self.event("type_speed_mismatch", "agrees", 31)
         self.assertFalse(curation.stale_check({**settled, "first_seen": 0}, now=self.NOW))
         self.assertNotIn("type_uncorroborated", [rule for rule, _ in curation.gates(settled, now=self.NOW)])
+
+    def test_a_finding_never_checked_keeps_holding(self):
+        # No check at all says nothing about the type, so the hold stays however old the finding is.
+        for kind in ("type_speed_mismatch", "first_type_here"):
+            with self.subTest(kind=kind):
+                event = self.event(kind, None, 31)
+                self.assertFalse(curation.stale_check(event, now=self.NOW))
+                self.assertEqual(curation.type_hold(event, now=self.NOW)[0], "type_check_pending")
+                self.assertNotIn("type_uncorroborated", dict(curation.gates(event, now=self.NOW)))
 
     def test_an_unlisted_address_check_never_goes_stale(self):
         # A registry that never answered says nothing about whether it lists the address.

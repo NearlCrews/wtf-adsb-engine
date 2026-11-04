@@ -164,7 +164,7 @@ class NewKindsAreRegistered(unittest.TestCase):
             kinds.table("absorbs")["racetrack_orbit"],
             ("course_reversal", "parallel_passes", "prolonged_holding"),
         )
-        self.assertEqual(kinds.KINDS["identity_conflict"].fixed_score[0], 70)
+        self.assertEqual(kinds.KINDS["identity_conflict"].fixed_score[0], 75)
         self.assertEqual(kinds.KINDS["holding_stack"].fixed_score, (78, None))
 
 

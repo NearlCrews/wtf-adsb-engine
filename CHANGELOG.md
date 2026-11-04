@@ -79,8 +79,11 @@ and evidence contract versions are tracked separately.
   N8447L are different airframes.
 - An address in a military allocation range corroborates the identity on its
   own.
-- `identity_conflict` has a fixed score of 70 (was 78), and `holding_stack`
-  has a fixed score of 78.
+- `identity_conflict` has a fixed score of 75 (was 78), the story bar, so it
+  fills a slot only when nothing else does, and `holding_stack` has a fixed
+  score of 78.
+- A finding that was never type-checked keeps its selection hold; only a
+  failed or outdated check goes stale 30 days after the first sighting.
 - Live spotting readings below the applied threshold are no longer journaled.
   The hourly prune deletes such live rows, and live rated rows the wind worker
   settled as within the limit, once last seen more than 7 days ago. Archive and
