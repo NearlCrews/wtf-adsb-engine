@@ -2326,7 +2326,7 @@ class _CrossDay:
                 "max_gs": state["max_gs"],
                 "addresses": len(state["addresses"]),
                 # As the collector counts them: from the baseline's first UTC midnight
-                # to the window's end, so no record appears in a baseline's first 14 days.
+                # to the window's end, so no record appears before rules.SEASON_MIN_BASELINE_DAYS.
                 "baseline_days": (sustained["ended_at"] - day_stamp(baseline)) / 86400,
             }
             finding = rules.seasonal_speed_record(aircraft, earlier, sustained=window, identity=checks)

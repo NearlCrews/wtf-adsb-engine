@@ -19,6 +19,7 @@ from .rules import (
     speed_plausible,
     type_envelope,
 )
+from .telemetry import DIRECT, source_for
 
 VERSION = 11
 MAX_PER_DAY = 9
@@ -229,6 +230,16 @@ def type_hold(event):
     return None
 
 
+def _direct_speed(aircraft):
+    """Whether a saved aircraft's own direct ADS-B source supplied its ground speed.
+
+    A snapshot names its source in "type"; an MLAT or TIS-B solution listed for
+    "gs" is a position-derived speed, never evidence against the listed type.
+    """
+    kind = aircraft.get("type")
+    return kind in DIRECT and source_for({**aircraft, "source": kind}, "gs") in DIRECT
+
+
 def gates(event):
     """Blocking evidence rules for one finding, as (rule, reason) pairs.
 
@@ -248,9 +259,12 @@ def gates(event):
     wind allowance and no rated-limit check, are judged again here.
     reading_implausible: an identity story about the listed type
     (PLAUSIBILITY_KINDS) whose saved aircraft reports a ground speed
-    rules.speed_plausible refuses, or a pressure altitude more than
-    CEILING_MARGIN_FT above the type envelope's ceiling; without a known
-    envelope or reading there is no evidence and no gate. A check still pending
+    rules.speed_plausible refuses, when its own direct ADS-B source supplied
+    that speed (_direct_speed), or a pressure altitude more than
+    CEILING_MARGIN_FT above the type envelope's ceiling. Without a known
+    envelope the envelope's cap and ceiling are skipped, while the absolute
+    speed bound and a rated limit from reference.limits still apply; a missing
+    reading is no evidence and no gate. A check still pending
     is a selection hold that resolves on its own: see type_hold().
     """
     kind = event["kind"]
@@ -312,7 +326,7 @@ def gates(event):
         aircraft = _mapping(evidence.get("aircraft"))
         gs, alt = number(aircraft.get("gs")), number(aircraft.get("alt_baro"))
         ceiling = number((type_envelope(aircraft) or {}).get("ceiling_ft"))
-        if gs is not None and not speed_plausible(aircraft, gs):
+        if gs is not None and _direct_speed(aircraft) and not speed_plausible(aircraft, gs):
             found.append(
                 (
                     "reading_implausible",

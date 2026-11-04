@@ -231,7 +231,7 @@ def conflict_leads(variants, stamp, archive=None):
         found = [_provenance(lead, archive) for lead in maneuvers.signals([report])]
         for field in ("baro_rate", "geom_rate"):
             rate = number(report.get(field))
-            if rate is not None and abs(rate) >= 4500:
+            if rate is not None and abs(rate) >= maneuvers.EPISODE_FPM:
                 found.append(
                     maneuvers.build(
                         "rapid_climb" if rate > 0 else "rapid_descent",

@@ -248,6 +248,18 @@ class ReadingImplausible(unittest.TestCase):
         self.assertIn("reading_implausible", rules_found)
         self.assertIn("420 kn", rules_found["reading_implausible"])
 
+    def test_only_a_direct_ads_b_speed_is_evidence(self):
+        mlat = self.event("first_type_here", gs=420, mlat=["gs", "lat", "lon"])
+        tisb = self.event("vintage", gs=420, tisb=["gs"])
+        solved = self.event("foreign_military", gs=420, type="mlat")
+        for event in (mlat, tisb, solved):
+            with self.subTest(aircraft=event["evidence"]["aircraft"]):
+                self.assertNotIn("reading_implausible", dict(curation.gates(event)))
+        self.assertIn("reading_implausible", dict(curation.gates(self.event("first_type_here", gs=420))))
+        # A position-derived speed leaves the altitude check in place.
+        high = self.event("first_type_here", gs=420, alt_baro=45000, mlat=["gs"])
+        self.assertIn("ceiling of 17,500 ft", dict(curation.gates(high))["reading_implausible"])
+
     def test_the_ceiling_has_a_margin(self):
         within = self.event("notable_variant", alt_baro=17500 + curation.CEILING_MARGIN_FT)
         above = self.event("notable_variant", alt_baro=17500 + curation.CEILING_MARGIN_FT + 100)
