@@ -140,6 +140,27 @@ class FirstOperatorHere(unittest.TestCase):
             "first_operator_here", self.kinds_of(self.AIRCRAFT, self.history(operator_days=None))
         )
 
+    def test_operator_coverage_counts_only_the_days_that_record_designators(self):
+        history = self.history(coverage_days=90, operator_coverage_days=29, operator_first_day="2026-10-01")
+        self.assertNotIn("first_operator_here", self.kinds_of(self.AIRCRAFT, history))
+        history = self.history(coverage_days=90, operator_coverage_days=30, operator_first_day="2026-10-01")
+        found = next(
+            f for f in rules.first_sighting(self.AIRCRAFT, history) if f.kind == "first_operator_here"
+        )
+        self.assertEqual(found.value, 30)
+        self.assertEqual(found.evidence["first_sighting"]["coverage_days"], 30)
+        self.assertEqual(found.evidence["first_sighting"]["since"], "2026-10-01")
+        self.assertIn("30 earlier days", found.why)
+        self.assertIn("since 2026-10-01", found.why)
+        # The type and country branches keep the general coverage.
+        first_type = next(
+            f
+            for f in rules.first_sighting(self.AIRCRAFT, {**history, "type_days": 0})
+            if f.kind == "first_type_here"
+        )
+        self.assertEqual(first_type.evidence["first_sighting"]["coverage_days"], 90)
+        self.assertEqual(first_type.evidence["first_sighting"]["since"], "2026-09-01")
+
     def test_no_finding_for_unknown_designator_n_number_or_light_type(self):
         self.assertNotIn(
             "first_operator_here", self.kinds_of({**self.AIRCRAFT, "flight": "ZZQ12"}, self.history())

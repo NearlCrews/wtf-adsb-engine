@@ -368,6 +368,15 @@ class CrossDayOperatorTests(unittest.TestCase):
         phase.day("2026-10-03", [self.row("a05f2e", "2026-10-03", "DAL88", 1_790_987_400, "DAL")])
         self.assertNotIn("first_operator_here", self.kinds(phase))
 
+    def test_a_sighting_whose_callsign_has_another_designator_gets_no_operator_counts(self):
+        phase = backfill._CrossDay(self.COVERAGE, {}, "2026-10-03T00:00:00Z")
+        phase.day("2026-10-02", [self.row("a05f2d", "2026-10-02", "SWA10", 1_790_901_000, "SWA")])
+        phase.events.clear()
+        # The day's first airline callsign was DAL, but the confirmed fix carries SWA,
+        # whose earlier day must not be hidden behind DAL's empty count.
+        phase.day("2026-10-03", [self.row("a05f2e", "2026-10-03", "SWA20", 1_790_987_400, "DAL")])
+        self.assertNotIn("first_operator_here", self.kinds(phase))
+
     def test_only_the_days_earliest_aircraft_is_first_and_a_day_without_coverage_is_not(self):
         phase = backfill._CrossDay(self.COVERAGE, {}, "2026-10-03T00:00:00Z")
         phase.day(

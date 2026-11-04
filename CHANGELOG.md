@@ -18,8 +18,10 @@ and evidence contract versions are tracked separately.
   operator name for a listed three-letter ICAO designator.
   `reference.operator_designator()` is unchanged.
 - A `designator` column in the `daily` table, added to existing journals on
-  start. The history backfill's cross-day phase is now `cross-day-v3` and
-  counts operator days.
+  start. Operator days and their coverage count from the `operator_days_since`
+  meta key: the next UTC day for an upgraded journal, the first day for a new
+  one. The history backfill's cross-day phase is now `cross-day-v3` and counts
+  operator days.
 - A `day_speed_samples` journal table that keeps each address's directional
   ground speeds for a UTC day, held for 3 days, and the `end_reason` value
   `day_closed`.

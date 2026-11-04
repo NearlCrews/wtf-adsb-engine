@@ -176,15 +176,18 @@ sighting; a failed recheck keeps the saved answer.
 A `first_operator_here` finding uses the existing `first_sighting` block with
 `scope` set to `operator`. It fires when an airline-style callsign carries a
 designator that the operator table names, no earlier covered day in the retained
-records had it, and those records cover at least 30 days.
+records had it, and those records cover at least 30 days. Only days whose daily
+rows record designators count: a journal that gained the column on upgrade counts
+from its next UTC day (the `operator_days_since` meta key), a new journal from
+its first day.
 
 | Field | Content |
 | --- | --- |
 | `scope` | `operator` |
 | `designator` | The three-letter ICAO designator from the callsign |
 | `operator` | The operator name from the shared designator table |
-| `coverage_days` | Earlier days with at least an hour of coverage |
-| `since` | The first day in the retained records, or null |
+| `coverage_days` | Earlier days with at least an hour of coverage that record designators |
+| `since` | The first such day in the retained records, or null |
 
 ### Aerobatic and racetrack metric keys
 

@@ -1466,6 +1466,10 @@ def first_sighting(aircraft, history):
                        appeared (None when not computed)
       operator_days    days on which any address used a callsign with this
                        operator designator (None when not computed)
+      operator_coverage_days, operator_first_day
+                       coverage_days and first_day counted only over the days
+                       whose rows record designators (optional; default the
+                       general ones)
     Records describe this station's retained history, never global rarity.
     """
     address = str(aircraft.get("hex", "")).strip().lower()
@@ -1542,9 +1546,13 @@ def first_sighting(aircraft, history):
         )
     designator = callsign_designator(aircraft)
     operator = reference.operator_name(designator) if designator else None
+    operator_coverage = number(history.get("operator_coverage_days", coverage)) or 0
+    operator_since = history.get("operator_first_day", since)
+    operator_since = operator_since if isinstance(operator_since, str) else None
+    operator_since_text = f" since {operator_since}" if operator_since else ""
     if (
         operator
-        and coverage >= FIRST_OPERATOR_COVERAGE_DAYS
+        and operator_coverage >= FIRST_OPERATOR_COVERAGE_DAYS
         and number(history.get("operator_days")) == 0
         and checks.get("conflict") is not True
         and checks.get("airline_callsign_on_light_type") is not True
@@ -1554,9 +1562,9 @@ def first_sighting(aircraft, history):
                 "first_operator_here",
                 "airframes",
                 f"First {operator} flight in this station's records",
-                coverage,
+                operator_coverage,
                 "coverage days",
-                f"No callsign with the {designator} designator appeared on any of the {coverage:,.0f} earlier days with at least an hour of coverage in this station's retained records{since_text}.",
+                f"No callsign with the {designator} designator appeared on any of the {operator_coverage:,.0f} earlier days with at least an hour of coverage in this station's retained records{operator_since_text}.",
                 "An operator designator in a callsign is a label the crew enters. It usually names the operator, but a charter, a lease, or a mistyped flight ID can carry another operator's designator. This describes this station's records only.",
                 76,
                 "Local retained history",
@@ -1565,8 +1573,8 @@ def first_sighting(aircraft, history):
                         "scope": "operator",
                         "designator": designator,
                         "operator": operator,
-                        "coverage_days": coverage,
-                        "since": since,
+                        "coverage_days": operator_coverage,
+                        "since": operator_since,
                     }
                 },
             )

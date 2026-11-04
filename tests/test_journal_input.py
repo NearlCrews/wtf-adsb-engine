@@ -3,7 +3,7 @@
 import sqlite3
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -189,6 +189,7 @@ class FirstOperatorBaseline(unittest.TestCase):
         self.path = path
         self.db = app.connect(path)
         self.addCleanup(self.db.close)
+        app.put_meta(self.db, app.OPERATOR_SINCE, "2026-09-01")
         # 31 covered days, 2026-09-01 through 2026-10-01.
         for offset in range(31):
             day = (date(2026, 9, 1) + timedelta(days=offset)).isoformat()
@@ -256,6 +257,58 @@ class FirstOperatorBaseline(unittest.TestCase):
         jetblue = {**self.AIRCRAFT, "flight": "JBU100"}
         kinds = [f.kind for f in later._first_sightings(self.db, jetblue, self.STAMP, checks)]
         self.assertNotIn("first_operator_here", kinds)
+
+
+class OperatorDaysSince(unittest.TestCase):
+    """Rows saved before the designator column hold none, so they cannot count against an operator."""
+
+    AIRCRAFT = FirstOperatorBaseline.AIRCRAFT
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.path = Path(folder.name) / "journal.sqlite3"
+        self.today = datetime.now(timezone.utc).date()
+
+    def kinds_on(self, day):
+        stamp = datetime(day.year, day.month, day.day, 0, 30, tzinfo=timezone.utc).timestamp()
+        checks = rules.identity_checks(self.AIRCRAFT)
+        with app.connect(self.path) as db:
+            found = app.Detector(self.path)._first_sightings(db, self.AIRCRAFT, stamp, checks)
+        return {f.kind: f for f in found}
+
+    def test_a_new_journal_records_designators_from_today(self):
+        app.initialize(self.path)
+        with app.connect(self.path) as db:
+            self.assertEqual(app.meta(db, app.OPERATOR_SINCE), self.today.isoformat())
+
+    def test_an_old_journal_counts_operators_only_from_its_next_day(self):
+        old = sqlite3.connect(self.path)
+        old.execute("CREATE TABLE daily (day TEXT, hex TEXT, typecode TEXT, PRIMARY KEY(day,hex))")
+        old.execute("CREATE TABLE coverage (day TEXT PRIMARY KEY, seconds REAL, polls INTEGER)")
+        # 60 covered days before the column, each with a DAL flight it never recorded.
+        for offset in range(1, 61):
+            day = (self.today - timedelta(days=offset)).isoformat()
+            old.execute("INSERT INTO coverage VALUES (?,3600,1)", (day,))
+            old.execute("INSERT INTO daily VALUES (?,'a1b2c3','A321')", (day,))
+        old.commit()
+        old.close()
+        app.initialize(self.path)
+        since = self.today + timedelta(days=1)
+        with app.connect(self.path) as db:
+            self.assertEqual(app.meta(db, app.OPERATOR_SINCE), since.isoformat())
+            for offset in range(30):
+                db.execute(
+                    "INSERT INTO coverage VALUES (?,3600,1)", ((since + timedelta(days=offset)).isoformat(),)
+                )
+        self.assertNotIn("first_operator_here", self.kinds_on(self.today))
+        # 29 covered days with designators: still too few.
+        self.assertNotIn("first_operator_here", self.kinds_on(since + timedelta(days=29)))
+        found = self.kinds_on(since + timedelta(days=30))["first_operator_here"]
+        self.assertEqual(found.evidence["first_sighting"]["coverage_days"], 30)
+        self.assertEqual(found.evidence["first_sighting"]["since"], since.isoformat())
+        # The headline value counts the same days.
+        self.assertEqual(found.value, 30)
 
 
 class JournalNoise(unittest.TestCase):

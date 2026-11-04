@@ -2268,8 +2268,10 @@ class _CrossDay:
                 # An aircraft of the type or State seen earlier the same day counts as a day.
                 "type_days": self.type_days[typecode] + (not first_type) if typecode else None,
                 "country_days": self.country_days[country] + (not first_country) if country else None,
+                # The counts are the day's designator's: they hold only when the sighting's
+                # own callsign carries the same one.
                 "operator_days": self.operator_days[designator] + (not first_operator)
-                if designator
+                if designator and rules.callsign_designator(aircraft) == designator
                 else None,
             }
             confirmed = sighted[source]
