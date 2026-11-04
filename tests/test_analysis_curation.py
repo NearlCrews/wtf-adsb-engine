@@ -6,8 +6,9 @@ group helpers; the rest of that file exercises publisher modules and stays there
 
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
-from wtf_adsb_engine.analysis import curation, selection, typecheck
+from wtf_adsb_engine.analysis import curation, reference, selection, typecheck
 
 START = datetime(2026, 10, 1, 12, tzinfo=timezone.utc).timestamp()
 
@@ -197,6 +198,82 @@ class CurationTests(unittest.TestCase):
             [rule for rule, _ in curation.gates(with_check("first_type_here", "disagrees"))],
             ["type_disagrees"],
         )
+
+
+# A fixed SR22 envelope so the gate does not depend on the shipped dataset's values.
+SR22_ENVELOPE = {
+    "type": "SR22",
+    "basis": "type",
+    "speed_bound_kt": 240,
+    "wind_allowance_kt": 60,
+    "wind_band_ft": [None, 10000],
+    "ground_speed_cap_kt": 300,
+    "ceiling_ft": 17500,
+    "altitude_margin_ft": 5000,
+    "altitude_cap_ft": 22500,
+    "dataset_version": "test",
+}
+
+
+class ReadingImplausible(unittest.TestCase):
+    """Type-dependent identity stories need a saved reading the listed type can produce."""
+
+    def setUp(self):
+        for patcher in (
+            patch.object(reference, "envelope", return_value=SR22_ENVELOPE),
+            patch.object(reference, "limits", return_value=None),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def event(self, kind, **aircraft):
+        base = {"hex": "a1b2c3", "r": "N283CP", "t": "SR22", "type": "adsb_icao", "gs": 160, "alt_baro": 8000}
+        return {
+            "kind": kind,
+            "value": None,
+            "hits": 5,
+            "first_seen": 0,
+            "last_seen": 60,
+            "evidence": {"aircraft": {**base, **aircraft}},
+        }
+
+    def test_sr22_at_45000_ft_is_gated(self):
+        rules_found = dict(curation.gates(self.event("first_type_here", alt_baro=45000)))
+        self.assertIn("reading_implausible", rules_found)
+        self.assertIn("45,000 ft", rules_found["reading_implausible"])
+        self.assertIn("17,500 ft", rules_found["reading_implausible"])
+
+    def test_sr22_at_420_knots_is_gated(self):
+        rules_found = dict(curation.gates(self.event("watch_type", gs=420)))
+        self.assertIn("reading_implausible", rules_found)
+        self.assertIn("420 kn", rules_found["reading_implausible"])
+
+    def test_the_ceiling_has_a_margin(self):
+        within = self.event("notable_variant", alt_baro=17500 + curation.CEILING_MARGIN_FT)
+        above = self.event("notable_variant", alt_baro=17500 + curation.CEILING_MARGIN_FT + 100)
+        self.assertNotIn("reading_implausible", dict(curation.gates(within)))
+        self.assertIn("reading_implausible", dict(curation.gates(above)))
+
+    def test_plausible_reading_passes_and_other_kinds_ignore_it(self):
+        self.assertNotIn("reading_implausible", dict(curation.gates(self.event("vintage"))))
+        self.assertNotIn(
+            "reading_implausible", dict(curation.gates(self.event("rapid_descent", alt_baro=45000)))
+        )
+
+    def test_every_listed_kind_is_gated(self):
+        for kind in sorted(curation.PLAUSIBILITY_KINDS):
+            with self.subTest(kind=kind):
+                self.assertIn("reading_implausible", dict(curation.gates(self.event(kind, alt_baro=45000))))
+
+    def test_an_unknown_envelope_is_no_evidence(self):
+        with patch.object(reference, "envelope", return_value=None):
+            event = self.event("foreign_military", alt_baro=45000, gs=420)
+            self.assertNotIn("reading_implausible", dict(curation.gates(event)))
+
+    def test_a_missing_reading_is_no_evidence(self):
+        event = self.event("first_type_here")
+        del event["evidence"]["aircraft"]["gs"], event["evidence"]["aircraft"]["alt_baro"]
+        self.assertNotIn("reading_implausible", dict(curation.gates(event)))
 
 
 if __name__ == "__main__":

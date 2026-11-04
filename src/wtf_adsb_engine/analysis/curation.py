@@ -17,6 +17,7 @@ from .rules import (
     SQUAWK_PREFIXES,
     number,
     speed_plausible,
+    type_envelope,
 )
 
 VERSION = 11
@@ -48,6 +49,13 @@ SERIES_KINDS = kinds.where(series=True)
 # publish when no registry lists the address, since the database is then the
 # only record, but never against a disagreeing one.
 PERFORMANCE_TYPE_KINDS = ENVELOPE_KINDS | RECORD_KINDS | RATED_KINDS
+# Identity stories that name the listed type: the saved reading must be one the type can
+# produce (gates' reading_implausible), or the story is about bad data or a wrong type.
+PLAUSIBILITY_KINDS = frozenset(
+    {"first_type_here", "watch_type", "vintage", "notable_variant", "foreign_military"}
+)
+# Pressure altitude allowed above the type envelope's ceiling before the reading is implausible.
+CEILING_MARGIN_FT = 2000
 # Selection and curation share one vintage story age.
 VINTAGE_YEARS = 80
 # Vintage airframes share one sub-topic per day, and an airframe with a vintage
@@ -237,8 +245,13 @@ def gates(event):
     no story could state it. speed_implausible: a season record whose sustained
     ground speed the current plausibility gate (rules.speed_plausible) refuses for
     the listed type at its altitude; records saved under older rules, with a flat
-    wind allowance and no rated-limit check, are judged again here. A check still
-    pending is a selection hold that resolves on its own: see type_hold().
+    wind allowance and no rated-limit check, are judged again here.
+    reading_implausible: an identity story about the listed type
+    (PLAUSIBILITY_KINDS) whose saved aircraft reports a ground speed
+    rules.speed_plausible refuses, or a pressure altitude more than
+    CEILING_MARGIN_FT above the type envelope's ceiling; without a known
+    envelope or reading there is no evidence and no gate. A check still pending
+    is a selection hold that resolves on its own: see type_hold().
     """
     kind = event["kind"]
     evidence = _mapping(event.get("evidence"))
@@ -295,6 +308,26 @@ def gates(event):
                 "plus the wind allowance at its altitude: bad data or a wrong type, not a record",
             )
         )
+    if kind in PLAUSIBILITY_KINDS:
+        aircraft = _mapping(evidence.get("aircraft"))
+        gs, alt = number(aircraft.get("gs")), number(aircraft.get("alt_baro"))
+        ceiling = number((type_envelope(aircraft) or {}).get("ceiling_ft"))
+        if gs is not None and not speed_plausible(aircraft, gs):
+            found.append(
+                (
+                    "reading_implausible",
+                    f"A ground speed of {gs:,.0f} kn is beyond the listed type's envelope: "
+                    "bad data or a wrong type, not a sighting of that type",
+                )
+            )
+        elif alt is not None and ceiling is not None and alt > ceiling + CEILING_MARGIN_FT:
+            found.append(
+                (
+                    "reading_implausible",
+                    f"A pressure altitude of {alt:,.0f} ft is above the listed type's ceiling of "
+                    f"{ceiling:,.0f} ft: bad data or a wrong type, not a sighting of that type",
+                )
+            )
     return found
 
 
