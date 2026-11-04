@@ -30,7 +30,7 @@ Changelog = "https://github.com/NearlCrews/wtf-adsb-engine/blob/main/CHANGELOG.m
 
 [project.optional-dependencies]
 archive = ["numpy==2.5.4"]
-dev = ["build==1.6.1", "hatchling==1.32.4", "ruff==0.17.2", "numpy==2.5.4"]
+dev = ["build==1.6.1", "hatchling==1.32.4", "ruff==0.17.3", "numpy==2.5.4"]
 
 [project.scripts]
 wtf-adsb-engine = "wtf_adsb_engine.cli:main"
