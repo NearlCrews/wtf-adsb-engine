@@ -96,6 +96,9 @@ class Kind:
     ground_speed_reading: bool = False
     # public_prose.SPEED_PROSE_KINDS and editorial.SPEED_KINDS: prose that names a ground speed.
     speed_prose: bool = False
+    # story_urls and the theme: the story has no aircraft subject; its path is slug plus date,
+    # and the page shows no registration photo, type box, or track map.
+    subjectless: bool = False
     # public_prose.CAUSELESS_KINDS.
     causeless: bool = False
     # editorial.DURATIVE_SHAPES and EMITTER_KINDS.
@@ -679,6 +682,7 @@ KINDS = {
             freshness_robust=True,
             landing_shaped=True,
             interest=30,
+            fixed_score=(78, None),
         ),
         Kind(
             "gnss_integrity_loss",
@@ -759,7 +763,7 @@ KINDS = {
             database_basis=True,
             interest=24,
             fixed_score=(
-                78,
+                70,
                 "Deterministic identity checks disagree; this is a data finding, not an identity claim",
             ),
         ),
@@ -876,6 +880,85 @@ KINDS = {
             # aircraft sends one. An indirect source for any of them flags the confirmation.
             numeric_fields=("gs", "track", "alt_baro", "tas"),
             interest=24,
+        ),
+        Kind(
+            "winds_aloft_day",
+            origin="episode",
+            journal_category="performance",
+            section="performance",
+            site_topic="winds-aloft",
+            slug=("winds-aloft", "winds"),
+            series=True,
+            subjectless=True,
+            interest=36,
+            fixed_score=(80, None),
+        ),
+        Kind(
+            "foreign_military",
+            origin="story",
+            section="unusual-aircraft",
+            site_topic="notable-aircraft",
+            slug_subject=True,
+            identity=True,
+            identity_led=True,
+            daily_row=True,
+            database_basis=True,
+            type_dependent=True,
+            interest=36,
+            fixed_score=(80, None),
+        ),
+        Kind(
+            "first_operator_here",
+            origin="story",
+            section="unusual-aircraft",
+            site_topic="first-sightings",
+            slug=("first-sighting", "first"),
+            identity=True,
+            identity_led=True,
+            daily_row=True,
+            first_sighting=True,
+            cross_day=True,
+            novelty=True,
+            callsign_first=True,
+            interest=30,
+        ),
+        Kind(
+            "aerobatic_practice",
+            origin="episode",
+            pattern=True,
+            section="flight-patterns",
+            site_topic="flight-shapes",
+            slug=("aerobatic-practice", "aerobatic"),
+            best_window=True,
+            durative=True,
+            absorbs=("altitude_oscillation", "course_reversal"),
+            interest=38,
+        ),
+        Kind(
+            "unregistered_address",
+            origin="story",
+            section="data-quality",
+            site_topic="unlisted-addresses",
+            slug=("unlisted-address", "address"),
+            identity=True,
+            identity_led=True,
+            daily_row=True,
+            type_dependent=True,
+            data_quality=True,
+            interest=24,
+            fixed_score=(75, "A registry gap can be lag; the story waits a week"),
+        ),
+        Kind(
+            "racetrack_orbit",
+            origin="episode",
+            pattern=True,
+            section="flight-patterns",
+            site_topic="holding-patterns",
+            slug=("racetrack-orbit", "racetrack"),
+            best_window=True,
+            durative=True,
+            absorbs=("course_reversal", "parallel_passes", "prolonged_holding"),
+            interest=38,
         ),
     )
 }

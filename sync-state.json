@@ -129,7 +129,7 @@
       "base": null,
       "synced": "8b6c8958b2a55cf431e96251ea301a10ad69a43c",
       "status": "written",
-      "dest_sha256": "2b79459e4eae19bb468a683fb35c76cf26c52c07172b4cddd4b31c7834c31da3"
+      "dest_sha256": "a7a5ad2ce1d9ddde08c1dc2794e7d755303eacd658373323a6463677ff0decc7"
     },
     "enrichment_rules": {
       "dest": "src/wtf_adsb_engine/analysis/enrichment_rules.py",
@@ -142,7 +142,7 @@
   },
   "shared_digests": {
     "src/wtf_adsb_engine/wire.py": "1113a72ec98b42f918a10c1386d85088adf3153db456dd98cbd6cfd7b227b00a",
-    "src/wtf_adsb_engine/analysis/kinds.py": "2b79459e4eae19bb468a683fb35c76cf26c52c07172b4cddd4b31c7834c31da3",
+    "src/wtf_adsb_engine/analysis/kinds.py": "a7a5ad2ce1d9ddde08c1dc2794e7d755303eacd658373323a6463677ff0decc7",
     "src/wtf_adsb_engine/analysis/enrichment_rules.py": "335c61fd7c0d8d38da613afd7e644b8ae7197252ac27586d342a43c3da1db25f",
     "src/wtf_adsb_engine/contracts/change-batch-v1.schema.json": "c2747586fa0ffb5621a8f6f9179c0afbdce13bbb38d57a126aefbdd55b6b919a",
     "src/wtf_adsb_engine/contracts/manifest-v1.schema.json": "790421775b5d5feb5ea15c4da82a691adcbeebdbba7fe8ee73a20dab1b0c7191",

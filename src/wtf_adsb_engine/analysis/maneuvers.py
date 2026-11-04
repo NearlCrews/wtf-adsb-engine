@@ -59,6 +59,7 @@ CATEGORIES = kinds.table(
         "stratospheric_balloon",
         "tcas_ra",
         "special_use_code",
+        "winds_aloft_day",
     ),
 )
 PATTERN_KINDS = KINDS - set(CATEGORIES)

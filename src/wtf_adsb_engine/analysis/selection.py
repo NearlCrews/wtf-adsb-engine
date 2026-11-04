@@ -356,6 +356,10 @@ FIXED_SCORES = kinds.table(
         "wind_boost",
         "altitude_gap",
         "distant",
+        "holding_stack",
+        "winds_aloft_day",
+        "foreign_military",
+        "unregistered_address",
     ),
 )
 # A novelty claim (first sighting, notable variant) needs two reports at least 8 s apart.

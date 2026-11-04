@@ -120,7 +120,7 @@ class DerivedSetsKeepTheirRelations(unittest.TestCase):
         )
         self.assertEqual(
             curation.SERIES_KINDS,
-            frozenset({"identity_conflict"}) | curation.RECORD_KINDS | rules.RATED_KINDS,
+            frozenset({"identity_conflict", "winds_aloft_day"}) | curation.RECORD_KINDS | rules.RATED_KINDS,
         )
         self.assertLessEqual(stories.FIRST_SIGHTING_KINDS, set(kinds.where(cross_day=True)))
         self.assertEqual(curation.FIRST_KINDS, frozenset(stories.FIRST_SIGHTING_KINDS))
@@ -128,6 +128,44 @@ class DerivedSetsKeepTheirRelations(unittest.TestCase):
     def test_the_norm_kinds_are_the_ground_speed_type_stories(self):
         self.assertIs(curation.NORM_KINDS, rules.NORM_KINDS)
         self.assertEqual(rules.NORM_KINDS, frozenset({"seasonal_speed_record", "type_speed_mismatch"}))
+
+
+class NewKindsAreRegistered(unittest.TestCase):
+    def test_six_new_kinds_follow_above_rated_speed_in_order(self):
+        names = list(kinds.KINDS)
+        start = names.index("above_rated_speed") + 1
+        self.assertEqual(
+            names[start : start + 6],
+            [
+                "winds_aloft_day",
+                "foreign_military",
+                "first_operator_here",
+                "aerobatic_practice",
+                "unregistered_address",
+                "racetrack_orbit",
+            ],
+        )
+
+    def test_flags_and_tables(self):
+        self.assertEqual(kinds.where(subjectless=True), frozenset({"winds_aloft_day"}))
+        self.assertEqual(kinds.KINDS["winds_aloft_day"].fixed_score, (80, None))
+        self.assertEqual(kinds.KINDS["foreign_military"].fixed_score, (80, None))
+        self.assertTrue(kinds.KINDS["foreign_military"].type_dependent)
+        self.assertTrue(kinds.KINDS["first_operator_here"].first_sighting)
+        self.assertTrue(kinds.KINDS["first_operator_here"].callsign_first)
+        self.assertEqual(
+            kinds.KINDS["unregistered_address"].fixed_score,
+            (75, "A registry gap can be lag; the story waits a week"),
+        )
+        self.assertEqual(
+            kinds.table("absorbs")["aerobatic_practice"], ("altitude_oscillation", "course_reversal")
+        )
+        self.assertEqual(
+            kinds.table("absorbs")["racetrack_orbit"],
+            ("course_reversal", "parallel_passes", "prolonged_holding"),
+        )
+        self.assertEqual(kinds.KINDS["identity_conflict"].fixed_score[0], 70)
+        self.assertEqual(kinds.KINDS["holding_stack"].fixed_score, (78, None))
 
 
 if __name__ == "__main__":

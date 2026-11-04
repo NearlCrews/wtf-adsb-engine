@@ -21,12 +21,34 @@
       "parallel_passes"
      ]
     }
+   ],
+   [
+    "aerobatic_practice",
+    {
+     "type": "tuple",
+     "value": [
+      "altitude_oscillation",
+      "course_reversal"
+     ]
+    }
+   ],
+   [
+    "racetrack_orbit",
+    {
+     "type": "tuple",
+     "value": [
+      "course_reversal",
+      "parallel_passes",
+      "prolonged_holding"
+     ]
+    }
    ]
   ]
  },
  "app.BEST_WINDOW_KINDS": {
   "type": "frozenset",
   "value": [
+   "aerobatic_practice",
    "altitude_oscillation",
    "course_reversal",
    "descending_spiral",
@@ -34,6 +56,7 @@
    "hovering",
    "parallel_passes",
    "prolonged_holding",
+   "racetrack_orbit",
    "survey_grid",
    "thermal_soaring"
   ]
@@ -44,11 +67,14 @@
    "database_watch",
    "emitter_type_mismatch",
    "first_country_here",
+   "first_operator_here",
    "first_type_here",
+   "foreign_military",
    "identity_conflict",
    "military",
    "notable_variant",
    "rare_here",
+   "unregistered_address",
    "unusual_emitter",
    "vintage",
    "watch_type",
@@ -219,7 +245,8 @@
    "position_jump",
    "space_category",
    "type_altitude_mismatch",
-   "type_speed_mismatch"
+   "type_speed_mismatch",
+   "unregistered_address"
   ]
  },
  "curation.ENVELOPE_KINDS": {
@@ -233,6 +260,7 @@
   "type": "frozenset",
   "value": [
    "first_country_here",
+   "first_operator_here",
    "first_type_here"
   ]
  },
@@ -241,10 +269,13 @@
   "value": [
    "database_watch",
    "first_country_here",
+   "first_operator_here",
    "first_type_here",
+   "foreign_military",
    "military",
    "notable_variant",
    "rare_here",
+   "unregistered_address",
    "unusual_emitter",
    "vintage",
    "watch_type",
@@ -617,6 +648,48 @@
      "type": "int",
      "value": "24"
     }
+   ],
+   [
+    "winds_aloft_day",
+    {
+     "type": "int",
+     "value": "36"
+    }
+   ],
+   [
+    "foreign_military",
+    {
+     "type": "int",
+     "value": "36"
+    }
+   ],
+   [
+    "first_operator_here",
+    {
+     "type": "int",
+     "value": "30"
+    }
+   ],
+   [
+    "aerobatic_practice",
+    {
+     "type": "int",
+     "value": "38"
+    }
+   ],
+   [
+    "unregistered_address",
+    {
+     "type": "int",
+     "value": "24"
+    }
+   ],
+   [
+    "racetrack_orbit",
+    {
+     "type": "int",
+     "value": "38"
+    }
    ]
   ]
  },
@@ -676,10 +749,13 @@
       "value": [
        "database_watch",
        "first_country_here",
+       "first_operator_here",
        "first_type_here",
+       "foreign_military",
        "military",
        "notable_variant",
        "rare_here",
+       "unregistered_address",
        "unusual_emitter",
        "vintage",
        "watch_type",
@@ -697,10 +773,13 @@
       "value": [
        "database_watch",
        "first_country_here",
+       "first_operator_here",
        "first_type_here",
+       "foreign_military",
        "military",
        "notable_variant",
        "rare_here",
+       "unregistered_address",
        "unusual_emitter",
        "vintage",
        "watch_type",
@@ -741,6 +820,7 @@
       "type": "list",
       "value": [
        "first_country_here",
+       "first_operator_here",
        "first_type_here"
       ]
      }
@@ -761,7 +841,8 @@
    "above_rated_altitude",
    "above_rated_speed",
    "identity_conflict",
-   "seasonal_speed_record"
+   "seasonal_speed_record",
+   "winds_aloft_day"
   ]
  },
  "curation.STATUS_EXCEPTIONS": {
@@ -787,6 +868,10 @@
    [
     "above_rated_speed",
     "above_rated_speed"
+   ],
+   [
+    "aerobatic_practice",
+    "aerobatic_practice"
    ],
    [
     "altitude_gap",
@@ -861,8 +946,16 @@
     "first_country_here"
    ],
    [
+    "first_operator_here",
+    "first_operator_here"
+   ],
+   [
     "first_type_here",
     "first_type_here"
+   ],
+   [
+    "foreign_military",
+    "foreign_military"
    ],
    [
     "formation_flight",
@@ -935,6 +1028,10 @@
    [
     "prolonged_holding",
     "prolonged_holding"
+   ],
+   [
+    "racetrack_orbit",
+    "racetrack_orbit"
    ],
    [
     "rapid_climb",
@@ -1033,6 +1130,10 @@
     "type_speed_mismatch"
    ],
    [
+    "unregistered_address",
+    "unregistered_address"
+   ],
+   [
     "unusual_emitter",
     "unusual_emitter"
    ],
@@ -1061,6 +1162,10 @@
     "wind_boost"
    ],
    [
+    "winds_aloft_day",
+    "winds_aloft_day"
+   ],
+   [
     "no_such_kind",
     "no_such_kind"
    ]
@@ -1076,6 +1181,10 @@
    [
     "above_rated_speed",
     "performance"
+   ],
+   [
+    "aerobatic_practice",
+    "aerobatic_practice"
    ],
    [
     "altitude_gap",
@@ -1150,7 +1259,15 @@
     "aircraft"
    ],
    [
+    "first_operator_here",
+    "aircraft"
+   ],
+   [
     "first_type_here",
+    "aircraft"
+   ],
+   [
+    "foreign_military",
     "aircraft"
    ],
    [
@@ -1224,6 +1341,10 @@
    [
     "prolonged_holding",
     "circling"
+   ],
+   [
+    "racetrack_orbit",
+    "racetrack_orbit"
    ],
    [
     "rapid_climb",
@@ -1322,6 +1443,10 @@
     "data-quality"
    ],
    [
+    "unregistered_address",
+    "aircraft"
+   ],
+   [
     "unusual_emitter",
     "aircraft"
    ],
@@ -1348,6 +1473,10 @@
    [
     "wind_boost",
     "performance"
+   ],
+   [
+    "winds_aloft_day",
+    "winds_aloft_day"
    ],
    [
     "no_such_kind",
@@ -1403,7 +1532,8 @@
   "value": [
    "first_type_here",
    "first_country_here",
-   "seasonal_speed_record"
+   "seasonal_speed_record",
+   "first_operator_here"
   ]
  },
  "maneuvers.CATEGORIES": {
@@ -1444,6 +1574,10 @@
    [
     "special_use_code",
     "signals"
+   ],
+   [
+    "winds_aloft_day",
+    "performance"
    ]
   ]
  },
@@ -1459,6 +1593,7 @@
  "maneuvers.KINDS": {
   "type": "set",
   "value": [
+   "aerobatic_practice",
    "altitude_oscillation",
    "correlated_data_anomaly",
    "course_reversal",
@@ -1473,6 +1608,7 @@
    "parallel_passes",
    "possible_go_around",
    "prolonged_holding",
+   "racetrack_orbit",
    "rapid_climb",
    "rapid_descent",
    "selected_altitude_overshoot",
@@ -1480,12 +1616,14 @@
    "stratospheric_balloon",
    "survey_grid",
    "tcas_ra",
-   "thermal_soaring"
+   "thermal_soaring",
+   "winds_aloft_day"
   ]
  },
  "maneuvers.PATTERN_KINDS": {
   "type": "set",
   "value": [
+   "aerobatic_practice",
    "altitude_oscillation",
    "course_reversal",
    "departure_return",
@@ -1497,6 +1635,7 @@
    "parallel_passes",
    "possible_go_around",
    "prolonged_holding",
+   "racetrack_orbit",
    "survey_grid",
    "thermal_soaring"
   ]
@@ -1563,11 +1702,14 @@
    "above_rated_altitude",
    "above_rated_speed",
    "first_country_here",
+   "first_operator_here",
    "first_type_here",
+   "foreign_military",
    "military",
    "notable_variant",
    "rare_here",
    "seasonal_speed_record",
+   "unregistered_address",
    "vintage",
    "watch_type"
   ]
@@ -1678,7 +1820,7 @@
      "value": [
       {
        "type": "int",
-       "value": "78"
+       "value": "70"
       },
       "Deterministic identity checks disagree; this is a data finding, not an identity claim"
      ]
@@ -1774,6 +1916,58 @@
       null
      ]
     }
+   ],
+   [
+    "holding_stack",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "78"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "winds_aloft_day",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "80"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "foreign_military",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "80"
+      },
+      null
+     ]
+    }
+   ],
+   [
+    "unregistered_address",
+    {
+     "type": "tuple",
+     "value": [
+      {
+       "type": "int",
+       "value": "75"
+      },
+      "A registry gap can be lag; the story waits a week"
+     ]
+    }
    ]
   ]
  },
@@ -1781,6 +1975,7 @@
   "type": "set",
   "value": [
    "first_country_here",
+   "first_operator_here",
    "first_type_here",
    "notable_variant"
   ]
@@ -1799,6 +1994,7 @@
  "stories.EPISODE_KINDS": {
   "type": "set",
   "value": [
+   "aerobatic_practice",
    "altitude_oscillation",
    "correlated_data_anomaly",
    "course_reversal",
@@ -1813,6 +2009,7 @@
    "parallel_passes",
    "possible_go_around",
    "prolonged_holding",
+   "racetrack_orbit",
    "rapid_climb",
    "rapid_descent",
    "selected_altitude_overshoot",
@@ -1820,13 +2017,15 @@
    "stratospheric_balloon",
    "survey_grid",
    "tcas_ra",
-   "thermal_soaring"
+   "thermal_soaring",
+   "winds_aloft_day"
   ]
  },
  "stories.FIRST_SIGHTING_KINDS": {
   "type": "set",
   "value": [
    "first_country_here",
+   "first_operator_here",
    "first_type_here"
   ]
  },
@@ -1842,7 +2041,9 @@
    "emitter_type_mismatch",
    "fast",
    "first_country_here",
+   "first_operator_here",
    "first_type_here",
+   "foreign_military",
    "high",
    "identity_conflict",
    "loitering",
@@ -1859,6 +2060,7 @@
    "space_category",
    "type_altitude_mismatch",
    "type_speed_mismatch",
+   "unregistered_address",
    "unusual_emitter",
    "vertical",
    "vintage",
@@ -2077,6 +2279,7 @@
  "stories.PATTERN_KINDS": {
   "type": "set",
   "value": [
+   "aerobatic_practice",
    "altitude_oscillation",
    "circling",
    "confined_activity",
@@ -2091,6 +2294,7 @@
    "parallel_passes",
    "possible_go_around",
    "prolonged_holding",
+   "racetrack_orbit",
    "repeated_passes",
    "survey_grid",
    "thermal_soaring"
@@ -2133,6 +2337,7 @@
   "value": [
    "above_rated_altitude",
    "above_rated_speed",
+   "aerobatic_practice",
    "altitude_gap",
    "altitude_oscillation",
    "archive_squawk_7400",
@@ -2150,7 +2355,9 @@
    "extreme_turn_rate",
    "fast",
    "first_country_here",
+   "first_operator_here",
    "first_type_here",
+   "foreign_military",
    "formation_flight",
    "gnss_integrity_cluster",
    "gnss_integrity_loss",
@@ -2169,6 +2376,7 @@
    "position_jump",
    "possible_go_around",
    "prolonged_holding",
+   "racetrack_orbit",
    "rapid_climb",
    "rapid_descent",
    "rare_here",
@@ -2193,12 +2401,14 @@
    "thermal_soaring",
    "type_altitude_mismatch",
    "type_speed_mismatch",
+   "unregistered_address",
    "unusual_emitter",
    "vertical",
    "vintage",
    "watch_type",
    "watchlist_match",
-   "wind_boost"
+   "wind_boost",
+   "winds_aloft_day"
   ]
  },
  "typecheck.REGISTRY_TYPE_KINDS": {
@@ -2214,11 +2424,13 @@
    "above_rated_altitude",
    "above_rated_speed",
    "first_type_here",
+   "foreign_military",
    "notable_variant",
    "rare_here",
    "seasonal_speed_record",
    "type_altitude_mismatch",
    "type_speed_mismatch",
+   "unregistered_address",
    "vintage",
    "watch_type"
   ]
