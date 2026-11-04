@@ -896,6 +896,18 @@ class RacetrackOrbit(unittest.TestCase):
         self.assertIsNone(maneuvers._nearest_runway_nm([30.0, -84.0]))
         self.assertIsNotNone(maneuvers._nearest_runway_nm([42.0, -84.0]))
 
+    def test_an_unknown_runway_distance_is_omitted_and_a_measured_one_capped(self):
+        legs = self.legs()
+        with patch.object(maneuvers, "_nearest_runway_nm", return_value=None):
+            info = maneuvers.racetrack(legs, self.pos(legs), {}).evidence["maneuver"]
+        self.assertNotIn("runway_within_nm", info)
+        self.assertNotIn("airport_context", info["context_tags"])
+        with patch.object(airport_context, "available", return_value=False):
+            info = maneuvers.racetrack(legs, self.pos(legs), {}).evidence["maneuver"]
+        self.assertNotIn("runway_within_nm", info)
+        info = maneuvers.racetrack(legs, self.pos(legs), {}).evidence["maneuver"]
+        self.assertLessEqual(info["runway_within_nm"], maneuvers.RACETRACK_RUNWAY_CAP_NM)
+
     def test_trajectory_joins_saved_and_buffered_legs_into_a_racetrack(self):
         track = Track(altitude=25000, speed=240)
         for index in range(6):

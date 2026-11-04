@@ -1772,7 +1772,8 @@ def racetrack(legs, pos, aircraft):
         axis_heading_deg=round(shape["axis"], 1),
         lateral_spacing_nm=round(shape["spacing"], 2),
         line_repeat_nm=round(shape["repeat"], 2),
-        runway_within_nm=round(runway, 1) if runway is not None else RACETRACK_RUNWAY_CAP_NM,
+        # An unknown distance (no runway table, or near its edge) is no measurement.
+        **({} if runway is None else {"runway_within_nm": round(runway, 1)}),
         episode_start=aligned[0]["started_at"],
     )
 

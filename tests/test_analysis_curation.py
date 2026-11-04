@@ -334,6 +334,16 @@ class StaleTypeChecks(unittest.TestCase):
                 self.assertIn("registry_unchecked", dict(curation.gates(event, now=self.NOW)))
 
 
+class AerobaticContext(unittest.TestCase):
+    def test_a_terminal_or_circuit_tag_makes_aerobatic_practice_context_only(self):
+        self.assertFalse(curation.context_only("aerobatic_practice", {"maneuver": {"context_tags": []}}))
+        for tag in ("terminal_area_context", "runway_circuit_context"):
+            with self.subTest(tag=tag):
+                evidence = {"maneuver": {"context_tags": [tag]}}
+                self.assertTrue(curation.context_only("aerobatic_practice", evidence))
+                self.assertFalse(curation.context_only("racetrack_orbit", evidence))
+
+
 class UnlistedAddressGates(unittest.TestCase):
     """An unlisted-address finding passes only once a settled recheck finds no registry entry."""
 

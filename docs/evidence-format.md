@@ -211,6 +211,9 @@ at most 5 NM.
 | `max_turn_rate_dps` | Highest position-derived turn rate held for 20 s, in deg/s; absent when no turn was held that long |
 | `basis` | `type` for a listed aerobatic designator, `turn_rate` for a light aircraft that held a turn of at least 6 deg/s |
 
+A finding tagged `terminal_area_context` or `runway_circuit_context` is context
+only and never a story on its own.
+
 `racetrack_orbit` needs at least four alternating legs, each at least 10 NM long
 and within 10 degrees of a common axis, over at least 40 minutes, with the two
 lines 2 to 15 NM apart.
@@ -222,7 +225,7 @@ lines 2 to 15 NM apart.
 | `axis_heading_deg` | Heading of the racetrack axis |
 | `lateral_spacing_nm` | Spacing between the two lines |
 | `line_repeat_nm` | Largest offset of a leg from its line, at most 1 NM |
-| `runway_within_nm` | Distance to the nearest mapped runway end, capped at 50 NM; also 50 outside the runway table's coverage |
+| `runway_within_nm` | Distance to the nearest mapped runway end, capped at 50 NM; absent when the distance is unknown (no runway table, or a racetrack center within 50 NM of the table's edge or outside it) |
 
 A racetrack can carry the `tanker_type`, `military_flag`, and `airport_context`
 tags. `airport_context` means the racetrack was centered within 10 NM of a mapped

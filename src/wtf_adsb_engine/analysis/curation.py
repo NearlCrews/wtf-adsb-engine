@@ -182,6 +182,11 @@ def _code(evidence):
     return code if isinstance(code, str) else None
 
 
+# Aerobatic-style practice near an airport or over a runway circuit is context only:
+# training circuits and approaches also reverse altitude often.
+AEROBATIC_CONTEXT_TAGS = frozenset({"terminal_area_context", "runway_circuit_context"})
+
+
 def context_only(kind, evidence=None):
     # Legacy scalar values are absolute. Only a saved negative barometric rate
     # establishes a descent; missing direction cannot bypass the climb policy.
@@ -191,6 +196,7 @@ def context_only(kind, evidence=None):
         kind in CONTEXT_KINDS
         or (kind == "vertical" and (rate is None or rate >= 0))
         or (kind == "special_use_code" and _code(evidence) in CONTEXT_CODES)
+        or (kind == "aerobatic_practice" and bool(context_tags(evidence) & AEROBATIC_CONTEXT_TAGS))
     )
 
 
