@@ -174,6 +174,14 @@ class ProjectionTests(unittest.TestCase):
         projected = export.EVIDENCE({"foreign_military": {**block, "basis": ["flag"]}})["foreign_military"]
         self.assertEqual(projected["basis"], [])
 
+    def test_unregistered_block_and_registry_gap_tag_project(self):
+        block = {"callsign": "TEST01", "category": "A2", "source": "adsb_icao"}
+        projected = export.EVIDENCE({"unregistered": block, "context_tags": ["registry_gap", "invented_tag"]})
+        self.assertEqual(projected["unregistered"], block)
+        self.assertEqual(projected["context_tags"], ["registry_gap"])
+        dropped = export.EVIDENCE({"unregistered": {**block, "source": "radio"}})["unregistered"]
+        self.assertNotIn("source", dropped)
+
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
         source["kind"] = "vfr_code_above_fl180"

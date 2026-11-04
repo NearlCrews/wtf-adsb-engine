@@ -49,6 +49,10 @@ SCANNED = "typecheck_scanned_until"
 SCAN_OVERLAP = 3600
 # The most pending events one pass reads, and the most of one address it updates.
 PENDING_LIMIT = 500
+# Registries lag new registrations, so an open finding about an address no registry
+# lists is looked up again once its saved check is this old.
+RECHECK_SECONDS = 7 * 86400
+RECHECK_KINDS = ("unregistered_address",)
 COLUMNS = ("hex", "source", "type_code", "registration", "fetched_at")
 
 
@@ -259,11 +263,14 @@ def fill(event, row, now=None):
     return block
 
 
-def pending(db, since, address=None):
+def pending(db, since, address=None, *, now=None):
     """Live type-dependent events last seen since `since` whose check is missing, unsettled
     (type_check_state's pending or failed) or compared with a type the aircraft no longer
-    lists, newest first."""
+    lists, newest first. Then, ordered by address, live RECHECK_KINDS events last seen
+    within LOOKBACK of `now` whose saved check is older than RECHECK_SECONDS."""
     from .app import LIVE_ORIGIN
+
+    now = time.time() if now is None else now
 
     kind_slots = ",".join("?" * len(TYPE_DEPENDENT_KINDS))
     settled = ",".join("?" * len(SETTLED))
@@ -280,12 +287,35 @@ def pending(db, since, address=None):
         f"SELECT id,hex,kind,evidence FROM events WHERE {where} ORDER BY last_seen DESC LIMIT ?",
         (*args, PENDING_LIMIT),
     ).fetchall()
-    events = []
+    if _has_table(db):
+        recheck = f"""e.origin=? AND e.last_seen>=? AND e.kind IN ({",".join("?" * len(RECHECK_KINDS))})
+            AND e.hex NOT LIKE '~%' AND json_valid(e.evidence) AND t.fetched_at<?"""
+        recheck_args = [LIVE_ORIGIN, now - LOOKBACK, *RECHECK_KINDS, now - RECHECK_SECONDS]
+        if address is not None:
+            recheck += " AND e.hex=?"
+            recheck_args.append(address)
+        rows += db.execute(
+            f"""SELECT e.id,e.hex,e.kind,e.evidence FROM events e JOIN type_checks t ON t.hex=e.hex
+                WHERE {recheck} ORDER BY e.hex, e.id LIMIT ?""",
+            (*recheck_args, PENDING_LIMIT),
+        ).fetchall()
+    events, seen = [], set()
     for row in rows:
+        if row["id"] in seen:
+            continue
+        seen.add(row["id"])
         event = dict(row)
         event["evidence"] = json.loads(event["evidence"])
         events.append(event)
     return events
+
+
+def _due(row, events, now):
+    """Whether an address needs a lookup: it has no retained check, or one of its
+    RECHECK_KINDS events rests on a check older than RECHECK_SECONDS."""
+    return row is None or (
+        now - row["fetched_at"] > RECHECK_SECONDS and any(event["kind"] in RECHECK_KINDS for event in events)
+    )
 
 
 def run_once(path, now=None, opener=None, *, enabled_override=None):
@@ -302,7 +332,7 @@ def run_once(path, now=None, opener=None, *, enabled_override=None):
         return {"state": "disabled"}
     with connect(path) as db:
         since = max(now - LOOKBACK, number(meta(db, SCANNED)) or 0)
-        events = pending(db, since)
+        events = pending(db, since, now=now)
         if not events:
             # Nothing waits: the next pass reads only events updated from here on.
             put_meta(db, SCANNED, now - SCAN_OVERLAP)
@@ -311,13 +341,14 @@ def run_once(path, now=None, opener=None, *, enabled_override=None):
         for event in events:
             addresses.setdefault(event["hex"], []).append(event)
         checks = {address: saved(db, address, now) for address in addresses}
-        due = next((address for address, row in checks.items() if row is None), None)
+        due = next((address for address, row in checks.items() if _due(row, addresses[address], now)), None)
         held = registry_http.waiting(db, NAME, now, INTERVAL) if due else None
-        # Writes come last: the retained checks, then the claim on the next request.
+        # Writes come last: the retained checks, then the claim on the next request. The
+        # address about to be looked up again keeps its block until the new answer.
         attached = sum(
             _attach_all(db, addresses[address], row, now)
             for address, row in checks.items()
-            if row is not None
+            if row is not None and address != due
         )
         if due and not held:
             registry_http.requested(db, NAME, now)
@@ -328,14 +359,14 @@ def run_once(path, now=None, opener=None, *, enabled_override=None):
         result = lookup(due, opener=opener, now=now)
     except registry_http.Unavailable as error:
         with connect(path) as db:
-            events = pending(db, now - LOOKBACK, due)
+            events = pending(db, now - LOOKBACK, due, now=now)
             registry_http.failed(db, NAME, now, error.status, "Type registry")
             # The events record the attempt; they are retried after the backoff.
             for event in events:
                 _write(db, event, failure_evidence(now, error.status))
         return {"state": "unavailable", "http_status": error.status, "attached": attached}
     with connect(path) as db:
-        events = pending(db, now - LOOKBACK, due)
+        events = pending(db, now - LOOKBACK, due, now=now)
         row = remember(db, due, result, now)
         attached += _attach_all(db, events, row, now)
         registry_http.succeeded(

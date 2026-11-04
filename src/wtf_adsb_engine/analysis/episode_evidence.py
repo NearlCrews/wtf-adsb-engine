@@ -140,6 +140,7 @@ CONTEXT_NOTES = {
     "archive_field_freshness_unknown": "These measurements come from saved archive tracks, which do not record how fresh each reported field was.",
     "refuelling_like": "One aircraft is a tanker type. The data cannot show whether fuel was transferred.",
     "aerotow_like": "A glider and another aircraft climbed together within 0.2 NM, as in an aerotow; the data cannot confirm a tow.",
+    "registry_gap": "The aircraft database lists no registration for this transmitting address. Registries lag new registrations, and some States publish none.",
 }
 # Kinds whose headline speed or position MLAT would estimate rather than receive.
 MLAT_ESTIMATE_KINDS = set(kinds.where(mlat_estimate=True))

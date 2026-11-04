@@ -242,3 +242,76 @@ class ForeignMilitary(unittest.TestCase):
     def test_civil_address_without_flag_or_allocation_does_not_fire(self):
         aircraft = {"hex": "3f4a21", "type": "adsb_icao", "r": "D-AIMA", "t": "A388", "dbFlags": 0}
         self.assertNotIn("foreign_military", self.kinds_of(aircraft))
+
+
+class UnregisteredAddress(unittest.TestCase):
+    def kinds_of(self, aircraft):
+        return {f.kind: f for f in rules.supplementary_candidates(aircraft, 1_700_000_000.0)}
+
+    def test_direct_adsb_without_registration_fires(self):
+        aircraft = {
+            "hex": "a1b2c3",
+            "type": "adsb_icao",
+            "r": "",
+            "t": "",
+            "flight": "TEST01",
+            "category": "A2",
+            "lat": 42.5,
+            "lon": -83.4,
+            "seen_pos": 1.0,
+            "alt_baro": 10000,
+            "gs": 250,
+        }
+        found = self.kinds_of(aircraft)
+        self.assertIn("unregistered_address", found)
+        self.assertEqual(
+            found["unregistered_address"].evidence["unregistered"],
+            {"callsign": "TEST01", "category": "A2", "source": "adsb_icao"},
+        )
+        self.assertIn("registry_gap", found["unregistered_address"].evidence["context_tags"])
+
+    def test_placeholder_registration_counts_as_missing(self):
+        aircraft = {
+            "hex": "a1b2c3",
+            "type": "adsb_icao",
+            "r": "UNKNOWN",
+            "lat": 42.5,
+            "lon": -83.4,
+            "seen_pos": 1.0,
+            "alt_baro": 10000,
+        }
+        found = self.kinds_of(aircraft)
+        self.assertIn("unregistered_address", found)
+        self.assertEqual(
+            found["unregistered_address"].evidence["unregistered"],
+            {"callsign": None, "category": None, "source": "adsb_icao"},
+        )
+
+    def test_conflict_tags_merge_with_the_registry_gap(self):
+        aircraft = {"hex": "a1b2c3", "type": "adsb_icao", "r": "", "lat": 42.5, "lon": -83.4, "seen_pos": 1.0}
+        conflict = dict(rules.UNCOMPUTED_IDENTITY) | {"conflict": True}
+        found = {f.kind: f for f in rules.supplementary_candidates(aircraft, 0.0, identity=conflict)}
+        self.assertEqual(
+            found["unregistered_address"].evidence["context_tags"],
+            ["metadata_identity_conflict", "registry_gap"],
+        )
+
+    def test_mlat_military_or_registered_do_not_fire(self):
+        base = {
+            "hex": "a1b2c3",
+            "type": "adsb_icao",
+            "r": "",
+            "lat": 42.5,
+            "lon": -83.4,
+            "seen_pos": 1.0,
+            "alt_baro": 10000,
+        }
+        self.assertIn("unregistered_address", self.kinds_of(base))
+        self.assertNotIn("unregistered_address", self.kinds_of({**base, "type": "mlat"}))
+        self.assertNotIn("unregistered_address", self.kinds_of({**base, "r": "N123AB"}))
+        self.assertNotIn("unregistered_address", self.kinds_of({**base, "hex": "~a1b2c3"}))
+        self.assertNotIn("unregistered_address", self.kinds_of({**base, "lat": None, "lon": None}))
+        self.assertNotIn("unregistered_address", self.kinds_of({**base, "seen_pos": 60.0}))
+        # The packaged tests carry no identity tables; the lookup stands in for the US military range.
+        with patch.object(reference, "military_allocation", side_effect={"ae1234"}.__contains__):
+            self.assertNotIn("unregistered_address", self.kinds_of({**base, "hex": "ae1234"}))

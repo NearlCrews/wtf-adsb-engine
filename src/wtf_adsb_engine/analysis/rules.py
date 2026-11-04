@@ -1368,6 +1368,35 @@ def supplementary_candidates(a, now, *, identity=None):
                 {"beacon_code": reference.beacon_code("1200")},
             )
         )
+    registration, _ = parse_registration(a.get("r"))
+    if (
+        a.get("type") == "adsb_icao"
+        and position(a)
+        and not registration
+        and not _non_icao(a)
+        and reference.military_allocation(a.get("hex")) is not True
+    ):
+        findings.append(
+            Finding(
+                "unregistered_address",
+                "oddities",
+                "No registry lists this address",
+                None,
+                "",
+                "The aircraft database has no registration for this transmitting address, which sent positions directly over ADS-B.",
+                "Registries lag new registrations, some States publish none, and an address can be programmed by hand. The second-source check runs again a week after the first sighting before this can become a story.",
+                70,
+                "Database lookup",
+                {
+                    "unregistered": {
+                        "callsign": _callsign(a) or None,
+                        "category": _text(a.get("category")) or None,
+                        "source": "adsb_icao",
+                    },
+                    "context_tags": ["registry_gap"],
+                },
+            )
+        )
     return _annotate(findings, checks, a)
 
 

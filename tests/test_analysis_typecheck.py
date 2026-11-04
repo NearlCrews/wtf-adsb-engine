@@ -99,3 +99,51 @@ class MismatchStories(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnregisteredRecheck(unittest.TestCase):
+    """An open unregistered_address finding is queued again once its saved check is a week old."""
+
+    DAY = 86400
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "journal.sqlite3"
+        app.initialize(self.path)
+
+    def add(self, fetched_at):
+        """Record a finding first seen ten days ago, with a settled check fetched at `fetched_at`."""
+        finding = Finding(
+            "unregistered_address", "oddities", "Test", None, "", "why", "explanation", 70, "Test", {}
+        )
+        aircraft = {"hex": "a1b2c3", "r": "", "t": "", "type": "adsb_icao", "alt_baro": 9000}
+        with app.connect(self.path) as db:
+            app.record(db, aircraft, finding, NOW - 10 * self.DAY, NOW - 3600, hits=6)
+            typecheck.remember(db, "a1b2c3", None, fetched_at)
+            # The first check settled the event, so only the recheck rule can queue it again.
+            for event in typecheck.pending(db, 0, now=fetched_at):
+                typecheck.attach(db, event, fetched_at)
+
+    def addresses(self):
+        with app.connect(self.path) as db:
+            return [event["hex"] for event in typecheck.pending(db, since=0, now=NOW)]
+
+    def test_a_check_older_than_a_week_is_queued_again(self):
+        self.add(NOW - 8 * self.DAY)
+        self.assertEqual(self.addresses(), ["a1b2c3"])
+
+    def test_a_recent_check_is_not_queued(self):
+        self.add(NOW - 1 * self.DAY)
+        self.assertEqual(self.addresses(), [])
+
+    def test_the_worker_looks_the_address_up_again_and_replaces_the_saved_check(self):
+        self.add(NOW - 8 * self.DAY)
+        result = typecheck.run_once(
+            self.path, now=NOW, opener=responses(not_found(), not_found()), enabled_override=True
+        )
+        self.assertEqual(result["state"], "checked")
+        self.assertEqual(result["hex"], "a1b2c3")
+        with app.connect(self.path) as db:
+            self.assertEqual(typecheck.saved(db, "a1b2c3", NOW)["fetched_at"], NOW)
+            self.assertEqual(typecheck.pending(db, since=0, now=NOW), [])

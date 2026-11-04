@@ -486,6 +486,7 @@ EVIDENCE_FIELDS = {
             "registration_country": _token,
         }
     ),
+    "unregistered": _object({"callsign": _text, "category": _token, "source": SOURCE}),
     "season_record": _object(
         {
             **{
