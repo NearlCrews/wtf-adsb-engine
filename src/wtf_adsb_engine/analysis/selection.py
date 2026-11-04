@@ -380,7 +380,7 @@ def assess(event, profiles=None, *, independent=False, now=None):
 
     Context-only kinds stay below promotion unless `independent` says their
     encounter also holds an independently promoted finding. `now` (default: the
-    current time) dates a stale type check (curation.type_check_state).
+    current time) dates a stale type check (curation.stale_check).
     """
     evidence = _mapping(event.get("evidence"))
     aircraft = _mapping(evidence.get("aircraft"))

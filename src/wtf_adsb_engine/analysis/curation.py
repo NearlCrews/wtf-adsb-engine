@@ -7,8 +7,8 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 from typing import NamedTuple
 
-from . import enrichment_rules, kinds, limits, reference
-from .enrichment_rules import REGISTRY_TYPE_KINDS, TYPE_DEPENDENT_KINDS
+from . import enrichment_rules, kinds, limits, reference, typecheck
+from .enrichment_rules import REGISTRY_TYPE_KINDS, SETTLED, TYPE_DEPENDENT_KINDS
 from .maneuvers import HIGH_RATE_FPM, altitude_agrees
 from .rules import (
     MIN_REPORT_SECONDS,
@@ -208,22 +208,25 @@ def report_count(event):
 
 
 # A second-source check still unsettled this long after the finding's first sighting
-# no longer holds it: the check counts as unavailable (type_check_state).
+# no longer holds it: the check counts as unavailable (stale_check).
 STALE_CHECK_SECONDS = 30 * 86400
 
 
-def type_check_state(evidence, first_seen=None, now=None):
-    """enrichment_rules.type_check_state, with a stale check reported "unavailable".
+def stale_check(event, now=None):
+    """Whether a finding's unsettled second-source check has gone stale.
 
-    A pending or failed check on a finding first seen more than
-    STALE_CHECK_SECONDS before `now` (default: the current time) is stale.
+    A pending or failed check (enrichment_rules.type_check_state) on a finding
+    first seen more than STALE_CHECK_SECONDS before `now` (default: the current
+    time) is stale: it no longer holds selection and counts as unavailable. A
+    typecheck.RECHECK_KINDS finding never goes stale, since a registry that never
+    answered says nothing about whether it lists the address.
     """
-    state = enrichment_rules.type_check_state(evidence)
-    first = number(first_seen)
-    if state in {"pending", "failed"} and first is not None:
-        if (time.time() if now is None else now) - first > STALE_CHECK_SECONDS:
-            return "unavailable"
-    return state
+    if event.get("kind") in typecheck.RECHECK_KINDS:
+        return False
+    first = number(event.get("first_seen"))
+    if first is None or enrichment_rules.type_check_state(event.get("evidence")) not in {"pending", "failed"}:
+        return False
+    return (time.time() if now is None else now) - first > STALE_CHECK_SECONDS
 
 
 def type_hold(event, *, now=None):
@@ -231,7 +234,7 @@ def type_hold(event, *, now=None):
 
     A pending or failed second-source check holds selection until the worker's
     next answer, for at most STALE_CHECK_SECONDS after the finding's first
-    sighting (type_check_state). The hold is not a review flag and never
+    sighting (stale_check). The hold is not a review flag and never
     unpublishes a released story: the publisher's next pass selects the finding
     once the check arrives. A disagreeing check, or no registry record for a
     performance kind, is a blocking gate instead (gates()).
@@ -239,8 +242,8 @@ def type_hold(event, *, now=None):
     kind = event["kind"]
     if kind not in TYPE_DEPENDENT_KINDS:
         return None
-    state = type_check_state(event.get("evidence"), event.get("first_seen"), now)
-    if state in {"pending", "failed"}:
+    state = enrichment_rules.type_check_state(event.get("evidence"))
+    if state in {"pending", "failed"} and not stale_check(event, now):
         return (
             "type_check_pending",
             "The second-source type check has not completed; selection waits for it"
@@ -259,6 +262,35 @@ def _direct_speed(aircraft):
     """
     kind = aircraft.get("type")
     return kind in DIRECT and source_for({**aircraft, "source": kind}, "gs") in DIRECT
+
+
+def _registry_gates(event, evidence):
+    """registry_lists_address and registry_unchecked for an unlisted-address finding (gates)."""
+    check = _mapping(evidence.get("type_check"))
+    if check.get("source") is not None or check.get("registration") is not None:
+        return [
+            (
+                "registry_lists_address",
+                f"A second source ({check.get('source')}) lists this address"
+                + (f" as {check['registration']}" if check.get("registration") else "")
+                + ", so the finding's premise does not hold",
+            )
+        ]
+    checked, first = number(check.get("checked_at")), number(event.get("first_seen"))
+    if (
+        enrichment_rules.type_check_state(evidence) not in SETTLED
+        or checked is None
+        or first is None
+        or checked - first < typecheck.RECHECK_SECONDS
+    ):
+        return [
+            (
+                "registry_unchecked",
+                f"The registries have not answered at least {typecheck.RECHECK_SECONDS // 86400} days "
+                "after the first sighting; registries lag new registrations",
+            )
+        ]
+    return []
 
 
 def gates(event, *, now=None):
@@ -285,15 +317,20 @@ def gates(event, *, now=None):
     CEILING_MARGIN_FT above the type envelope's ceiling. Without a known
     envelope the envelope's cap and ceiling are skipped, while the absolute
     speed bound and a rated limit from reference.limits still apply; a missing
-    reading is no evidence and no gate. A check still pending
+    reading is no evidence and no gate. registry_lists_address: an unlisted-address
+    finding (typecheck.RECHECK_KINDS) whose second source named a registration or
+    a type for the address. registry_unchecked: such a finding without a settled
+    check made at least typecheck.RECHECK_SECONDS after its first sighting, since
+    registries lag new registrations. A check still pending
     is a selection hold that resolves on its own: see type_hold(). One left
-    unsettled for STALE_CHECK_SECONDS counts as unavailable at `now`.
+    unsettled for STALE_CHECK_SECONDS counts as unavailable at `now` (stale_check).
     """
     kind = event["kind"]
     evidence = _mapping(event.get("evidence"))
     found = []
     if kind in TYPE_DEPENDENT_KINDS:
-        state = type_check_state(evidence, event.get("first_seen"), now)
+        stale = stale_check(event, now)
+        state = "unavailable" if stale else enrichment_rules.type_check_state(evidence)
         check = _mapping(evidence.get("type_check"))
         if state == "disagrees" and kind not in REGISTRY_TYPE_KINDS:
             found.append(
@@ -306,11 +343,13 @@ def gates(event, *, now=None):
             found.append(
                 (
                     "type_uncorroborated",
-                    "No registry lists this address's type; a performance claim needs corroboration"
-                    if enrichment_rules.type_check_state(evidence) == "unavailable"
-                    else f"The second-source type check did not complete within {STALE_CHECK_SECONDS // 86400} days; a performance claim needs corroboration",
+                    f"The second-source type check did not complete within {STALE_CHECK_SECONDS // 86400} days; a performance claim needs corroboration"
+                    if stale
+                    else "No registry lists this address's type; a performance claim needs corroboration",
                 )
             )
+    if kind in typecheck.RECHECK_KINDS:
+        found.extend(_registry_gates(event, evidence))
     if kind.startswith("outlier_") or kind in ENVELOPE_KINDS or kind in RATED_KINDS:
         reports, span = report_count(event)
         if reports < MIN_REPORTS or span < MIN_REPORT_SECONDS:

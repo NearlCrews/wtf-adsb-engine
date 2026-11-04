@@ -310,24 +310,71 @@ class StaleTypeChecks(unittest.TestCase):
                     fresh, stale = self.event(kind, state, 2), self.event(kind, state, 31)
                     self.assertEqual(curation.type_hold(fresh, now=self.NOW)[0], "type_check_pending")
                     self.assertIsNone(curation.type_hold(stale, now=self.NOW))
-                    evidence, first = stale["evidence"], stale["first_seen"]
-                    self.assertEqual(
-                        curation.type_check_state(evidence, first_seen=first, now=self.NOW), "unavailable"
-                    )
-                    self.assertIn(
-                        curation.type_check_state(
-                            fresh["evidence"], first_seen=fresh["first_seen"], now=self.NOW
-                        ),
-                        {"pending", "failed"},
-                    )
+                    self.assertTrue(curation.stale_check(stale, now=self.NOW))
+                    self.assertFalse(curation.stale_check(fresh, now=self.NOW))
         # A stale check leaves a performance claim uncorroborated; a settled one is never stale.
         rules = [
             rule for rule, _ in curation.gates(self.event("type_speed_mismatch", None, 31), now=self.NOW)
         ]
         self.assertIn("type_uncorroborated", rules)
         settled = self.event("type_speed_mismatch", "agrees", 31)
-        self.assertEqual(curation.type_check_state(settled["evidence"], first_seen=0, now=self.NOW), "agrees")
+        self.assertFalse(curation.stale_check({**settled, "first_seen": 0}, now=self.NOW))
         self.assertNotIn("type_uncorroborated", [rule for rule, _ in curation.gates(settled, now=self.NOW)])
+
+    def test_an_unlisted_address_check_never_goes_stale(self):
+        # A registry that never answered says nothing about whether it lists the address.
+        for state in (None, "failed"):
+            with self.subTest(state=state):
+                event = self.event("unregistered_address", state, 31)
+                if state == "failed":
+                    # A failed block names no source (typecheck.failure_evidence).
+                    event["evidence"]["type_check"]["source"] = None
+                self.assertFalse(curation.stale_check(event, now=self.NOW))
+                self.assertEqual(curation.type_hold(event, now=self.NOW)[0], "type_check_pending")
+                self.assertIn("registry_unchecked", dict(curation.gates(event, now=self.NOW)))
+
+
+class UnlistedAddressGates(unittest.TestCase):
+    """An unlisted-address finding passes only once a settled recheck finds no registry entry."""
+
+    def event(self, **check):
+        event = finding(1, "unregistered_address", value=None, address="a1b2c3")
+        event["evidence"]["aircraft"]["t"] = ""
+        if check:
+            event["evidence"]["type_check"] = {
+                "state": "unavailable",
+                "source": None,
+                "type_code": None,
+                "registration": None,
+                "listed_type": None,
+                **check,
+            }
+        else:
+            del event["evidence"]["type_check"]
+        return event
+
+    def rules(self, event):
+        return [rule for rule, _ in curation.gates(event, now=START + 40 * 86400)]
+
+    def test_a_registry_that_lists_the_address_blocks_it(self):
+        week = START + typecheck.RECHECK_SECONDS
+        for check in (
+            {"source": "hexdb", "registration": "N123AB"},
+            {"source": "adsbdb", "type_code": "C172", "listed_type": None},
+            {"registration": "C-GKXM"},
+        ):
+            with self.subTest(check=check):
+                found = self.rules(self.event(checked_at=week, **check))
+                self.assertIn("registry_lists_address", found)
+                self.assertNotIn("registry_unchecked", found)
+
+    def test_only_a_settled_check_a_week_after_the_first_sighting_passes(self):
+        self.assertIn("registry_unchecked", self.rules(self.event()))
+        self.assertIn("registry_unchecked", self.rules(self.event(checked_at=START + 86400)))
+        failed = self.event(state="failed", checked_at=START + typecheck.RECHECK_SECONDS)
+        self.assertIn("registry_unchecked", self.rules(failed))
+        settled = self.event(checked_at=START + typecheck.RECHECK_SECONDS)
+        self.assertEqual([rule for rule in self.rules(settled) if rule.startswith("registry_")], [])
 
 
 if __name__ == "__main__":

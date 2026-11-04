@@ -158,12 +158,18 @@ disagrees with the allocation, or an identity conflict, withholds it.
 ### `unregistered`
 
 An `unregistered_address` finding marks a direct ADS-B report with a usable
-position whose address the aircraft database lists without a registration, or
-only with a placeholder, outside the military allocation ranges. It carries the
-`registry_gap` context tag. The kind is type-dependent and is not identity-led,
-so it never waits on identity corroboration. The type-check worker looks the
-address up again once its saved check is 7 days old, within 30 days of the first
-sighting; a failed recheck keeps the saved answer.
+position whose address no consulted registry lists, whether the aircraft database
+lacks the address or lists it without a registration (or only with a
+placeholder). Addresses in the military allocation ranges and privacy (PIA)
+addresses are excluded. It carries the `registry_gap` context tag. The kind is
+type-dependent and is not identity-led, so it never waits on identity
+corroboration. The type-check worker looks the address up again once its saved
+check is 7 days old, within 30 days of the first sighting; a failed recheck keeps
+the saved answer, and an unanswered check never expires into "unavailable".
+Selection blocks the finding while a second source names a registration or a
+type for the address (`registry_lists_address`), and until a settled check whose
+`type_check.checked_at`, the time the registry answered, is at least 7 days after
+the first sighting (`registry_unchecked`).
 
 | Field | Content |
 | --- | --- |

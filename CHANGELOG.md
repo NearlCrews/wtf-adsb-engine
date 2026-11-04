@@ -70,12 +70,19 @@ and evidence contract versions are tracked separately.
   rows, including rated rows later settled as within the limit, once last seen
   more than 7 days ago. Archive and replay rows are kept.
 - A second-source type check still pending or failed 30 days after the first
-  sighting counts as unavailable, so it no longer holds selection. The export
-  dates this by its own export time. `typecheck.pending` asks about the highest
-  scores first, then the newest first sightings.
+  sighting counts as unavailable, so it no longer holds selection; an
+  `unregistered_address` check never does. The export dates this by its own
+  export time. `typecheck.pending` asks about the highest scores first, then
+  the newest first sightings.
+- `type_check.checked_at` is the time the registry answered, also when the
+  worker attaches a retained check.
 - An open `unregistered_address` finding has its registry lookup repeated once
   its saved check is a week old, within 30 days of the first sighting. A failed
-  recheck keeps the saved answer.
+  recheck keeps the saved answer. Selection blocks the finding while a second
+  source names a registration or a type for the address
+  (`registry_lists_address`), and until a settled check made at least a week
+  after the first sighting (`registry_unchecked`). Privacy (PIA) addresses
+  never make the finding.
 - A possible go-around carries `airport_maneuver_hypothesis` as a context tag
   instead of a blocking quality flag.
 

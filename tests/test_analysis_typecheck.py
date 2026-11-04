@@ -184,6 +184,26 @@ class UnregisteredRecheck(unittest.TestCase):
         self.assertEqual(self.addresses(), ["a1b2c3"])
 
 
+class CheckedAt(unittest.TestCase):
+    def test_a_retained_check_is_dated_when_the_registry_answered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "journal.sqlite3"
+            app.initialize(path)
+            finding = Finding(
+                "type_speed_mismatch", "oddities", "Test", 500, "kn", "why", "explanation", 74, "Test", {}
+            )
+            aircraft = {"hex": "c06173", "r": "C-GKXM", "t": "DH8D", "type": "adsb_icao", "gs": 500}
+            with app.connect(path) as db:
+                app.record(db, aircraft, finding, NOW - 600, NOW - 60, hits=6)
+                typecheck.remember(db, "c06173", {"source": "hexdb", "type_code": "DH8D"}, NOW - 86400)
+            result = typecheck.run_once(path, now=NOW, opener=responses(), enabled_override=True)
+            self.assertEqual((result["state"], result["attached"]), ("cached", 1))
+            with app.connect(path) as db:
+                evidence = json.loads(db.execute("SELECT evidence FROM events").fetchone()[0])
+        self.assertEqual(evidence["type_check"]["checked_at"], NOW - 86400)
+        self.assertEqual(evidence["type_check"]["state"], "agrees")
+
+
 class PendingOrder(unittest.TestCase):
     """The worker asks about the strongest, newest candidates first."""
 

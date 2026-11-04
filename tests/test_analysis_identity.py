@@ -391,6 +391,11 @@ class UnregisteredAddress(unittest.TestCase):
         self.assertNotIn("unregistered_address", self.kinds_of({**base, "hex": "~a1b2c3"}))
         self.assertNotIn("unregistered_address", self.kinds_of({**base, "lat": None, "lon": None}))
         self.assertNotIn("unregistered_address", self.kinds_of({**base, "seen_pos": 60.0}))
+        # A PIA address is listed without its registration on purpose.
+        self.assertNotIn("unregistered_address", self.kinds_of({**base, "dbFlags": 4}))
+        precomputed = dict(rules.UNCOMPUTED_IDENTITY) | {"pia": True}
+        found = rules.supplementary_candidates(base, 0.0, identity=precomputed)
+        self.assertNotIn("unregistered_address", [f.kind for f in found])
         # The packaged tests carry no identity tables; the lookup stands in for the US military range.
         with patch.object(reference, "military_allocation", side_effect={"ae1234"}.__contains__):
             self.assertNotIn("unregistered_address", self.kinds_of({**base, "hex": "ae1234"}))

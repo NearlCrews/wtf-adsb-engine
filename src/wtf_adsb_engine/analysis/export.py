@@ -601,7 +601,7 @@ def project_source(source, *, source_instance="receiver", finding_identifier=Non
     """Sanctioned migration finding, retaining enough proof for existing policy.
 
     `now` (default: the current time) is the export time a stale type check is dated
-    by when the selection is rebuilt (curation.type_check_state).
+    by when the selection is rebuilt (curation.stale_check).
     """
     if source.get("kind") not in FINDING_KINDS:
         return None

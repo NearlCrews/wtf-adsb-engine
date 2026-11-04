@@ -1427,6 +1427,9 @@ def supplementary_candidates(a, now, *, identity=None):
         and position(a)
         and not registration
         and not _non_icao(a)
+        # A privacy (PIA) address is listed without its registration by design.
+        and not _db_flags(a) & 4
+        and checks.get("pia") is not True
         and reference.military_allocation(a.get("hex")) is not True
     ):
         findings.append(

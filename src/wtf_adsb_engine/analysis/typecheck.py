@@ -180,9 +180,10 @@ def remember(db, address, result, now):
     return row
 
 
-def check_evidence(aircraft, row, now):
+def check_evidence(aircraft, row):
     """The evidence block attach() writes: the source's answer, the listed type it
-    was compared with and the resulting state."""
+    was compared with, the resulting state, and when the registry answered (the
+    row's fetched_at) as checked_at."""
     listed = clean((aircraft or {}).get("t"))
     agrees = agreement(listed, row.get("type_code"))
     return {
@@ -192,7 +193,7 @@ def check_evidence(aircraft, row, now):
         "registration": row.get("registration"),
         # The type the answer was compared with; a changed listing is checked again.
         "listed_type": listed,
-        "checked_at": now,
+        "checked_at": row["fetched_at"],
     }
 
 
@@ -224,10 +225,11 @@ def _write(db, event, block):
     return block
 
 
-def _attach_all(db, events, row, now):
-    """Write one address's retained check into its events; returns how many."""
+def _attach_all(db, events, row):
+    """Write one address's retained check into its events, dated when the registry
+    answered (the row's fetched_at); returns how many."""
     for event in events:
-        _write(db, event, check_evidence(event["evidence"].get("aircraft"), row, now))
+        _write(db, event, check_evidence(event["evidence"].get("aircraft"), row))
     return len(events)
 
 
@@ -242,7 +244,7 @@ def attach(db, event, now):
     row = saved(db, str(event.get("hex", "")).lower(), now)
     if row is None:
         return None
-    return _write(db, event, check_evidence(event["evidence"].get("aircraft"), row, now))
+    return _write(db, event, check_evidence(event["evidence"].get("aircraft"), row))
 
 
 def fill(event, row, now=None):
@@ -260,7 +262,7 @@ def fill(event, row, now=None):
     row = _current(row, now)
     if row is None:
         return None
-    block = check_evidence(event["evidence"].get("aircraft"), row, row["fetched_at"])
+    block = check_evidence(event["evidence"].get("aircraft"), row)
     event["evidence"]["type_check"] = block
     return block
 
@@ -351,7 +353,7 @@ def run_once(path, now=None, opener=None, *, enabled_override=None):
         # Writes come last: the retained checks, then the claim on the next request. An
         # address due for a recheck keeps its block until its own lookup answers.
         attached = sum(
-            _attach_all(db, addresses[address], row, now)
+            _attach_all(db, addresses[address], row)
             for address, row in checks.items()
             if row is not None and not _due(row, addresses[address], now)
         )
@@ -375,7 +377,7 @@ def run_once(path, now=None, opener=None, *, enabled_override=None):
     with connect(path) as db:
         events = pending(db, now - LOOKBACK, due, now=now)
         row = remember(db, due, result, now)
-        attached += _attach_all(db, events, row, now)
+        attached += _attach_all(db, events, row)
         registry_http.succeeded(
             db,
             NAME,
