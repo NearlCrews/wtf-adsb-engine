@@ -941,7 +941,6 @@ KINDS = {
             site_topic="unlisted-addresses",
             slug=("unlisted-address", "address"),
             identity=True,
-            identity_led=True,
             daily_row=True,
             type_dependent=True,
             data_quality=True,

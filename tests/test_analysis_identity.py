@@ -296,6 +296,39 @@ class UnregisteredAddress(unittest.TestCase):
             ["metadata_identity_conflict", "registry_gap"],
         )
 
+    def test_an_uncorroborated_identity_does_not_block_the_finding(self):
+        aircraft = {
+            "hex": "a1b2c3",
+            "type": "adsb_icao",
+            "r": "",
+            "dbFlags": 1,
+            "lat": 42.5,
+            "lon": -83.4,
+            "seen_pos": 1.0,
+        }
+        loaded = reference.dataset
+        checks = dict(rules.UNCOMPUTED_IDENTITY)
+        self.addCleanup(reference.clear_cache)
+        # With the identity tables loaded and nothing corroborating the identity, _annotate
+        # flags identity-led kinds; an address with no registration is the finding itself.
+        with (
+            patch.object(
+                reference, "dataset", side_effect=lambda name: {} if name == "identity" else loaded(name)
+            ),
+            patch.object(reference, "military_allocation", return_value=False),
+            patch.object(reference, "allocation", return_value=None),
+            patch.object(rules, "identity_corroborated", return_value=False),
+        ):
+            unlisted = {
+                f.kind: f for f in rules.supplementary_candidates(aircraft, 1_700_000_000.0, identity=checks)
+            }["unregistered_address"]
+            military = {f.kind: f for f in rules.candidates(aircraft, 1_700_000_000.0, identity=checks)}[
+                "military"
+            ]
+        self.assertNotIn("unregistered_address", rules.IDENTITY_LED_KINDS)
+        self.assertNotIn("identity_unverified", unlisted.evidence.get("quality_flags", []))
+        self.assertIn("identity_unverified", military.evidence["quality_flags"])
+
     def test_mlat_military_or_registered_do_not_fire(self):
         base = {
             "hex": "a1b2c3",
