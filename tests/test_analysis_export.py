@@ -209,6 +209,42 @@ class ProjectionTests(unittest.TestCase):
         retired = export.EVIDENCE({"maneuver": {**block, "legs": 4, "duration_s": 3420}})["maneuver"]
         self.assertEqual(retired, block)
 
+    def test_winds_aloft_block_participant_speeds_and_day_closed_project(self):
+        block = {
+            "day": "2026-11-05",
+            "east_addresses": 41,
+            "west_addresses": 38,
+            "east_median_kn": 562.0,
+            "west_median_kn": 381.5,
+            "east_quartiles_kn": [548.0, 575.0],
+            "west_quartiles_kn": [370.0, 392.0],
+            "asymmetry_kn": 181,
+            "altitude_floor_ft": 28000,
+            "evaluated_at": 1793880000.0,
+            "wind_250_hpa": {
+                "speed_kn": 140.0,
+                "direction_deg": 260.0,
+                "source": "open-meteo",
+                "hour": "2026-11-05T12:00",
+            },
+        }
+        member = {"hex": "a00001", "role": "member", "measurements": {"median_gs_kn": 545.0}}
+        projected = export.EVIDENCE(
+            {
+                "winds_aloft": block,
+                "participants": [member],
+                "maneuver": {"state": "ended", "end_reason": "day_closed"},
+            }
+        )
+        self.assertEqual(projected["winds_aloft"], block)
+        self.assertEqual(projected["participants"][0]["measurements"], {"median_gs_kn": 545.0})
+        self.assertEqual(projected["maneuver"]["end_reason"], "day_closed")
+        self.assertEqual(
+            stories.participants({"participants": [member]})[0]["measurements"], {"median_gs_kn": 545.0}
+        )
+        other = {**block, "wind_250_hpa": {**block["wind_250_hpa"], "source": "nws"}}
+        self.assertNotIn("source", export.EVIDENCE({"winds_aloft": other})["winds_aloft"]["wind_250_hpa"])
+
     def test_engine_retains_a_kind_without_a_public_story_policy(self):
         source = sample_source()
         source["kind"] = "vfr_code_above_fl180"

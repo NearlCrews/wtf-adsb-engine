@@ -30,6 +30,7 @@ from . import (
     typecheck,
     watchlists,
     wind,
+    winds,
 )
 from .replay_patterns import ARCHIVE_ORIGINS, prune_fingerprints
 from .rules import (
@@ -256,6 +257,7 @@ def initialize(path=DATABASE):
         flightaware.initialize(db)
         typecheck.initialize(db)
         wind.initialize(db)
+        db.executescript(winds.DDL)
 
 
 def _without_receiver_fields(value):
@@ -902,6 +904,8 @@ class Detector:
         # Reference data loads once; the status meta rows are written when they change.
         self.reference_status, self.saved_status = None, {}
         self.aircraft_failures = 0
+        # The last winds-aloft evaluation; it runs every winds.INTERVAL.
+        self.winds_at = 0.0
         self._forget()
 
     def _forget(self):
@@ -1042,6 +1046,7 @@ class Detector:
             self._guarded(status, "correlations", self._correlations, db, now)
             if now >= self.next_multi:
                 self._guarded(status, "multi_aircraft", self._multi, db, now)
+                self._guarded(status, "winds_aloft", self._winds_aloft, db, now)
                 self.next_multi = now + MULTI_INTERVAL
             day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
             elapsed = max(0, min(30, now - self.last_poll)) if self.last_poll else 0
@@ -1221,6 +1226,7 @@ class Detector:
         distance = number(raw.get("r_dst"))
         band = range_band(distance) if distance is not None and distance <= RANGE_BOUND_NM else 0
         remember(db, a, stamp, stamp, performance=not conflict, band=band)
+        winds.remember(db, a, stamp)
         findings = candidates(a, now, self.rarity, self.profiles, identity=checks, band=band)
         findings += rules.supplementary_candidates(a, now, identity=checks)
         findings += self._guarded(
@@ -2183,7 +2189,8 @@ class Detector:
             self.multi[key] = {"finding": finding, "a": previous["a"], "extra": extra, "seen": now}
             self._confirm(db, previous["a"], finding, now, extra)
         for key, entry in list(self.multi.items()):
-            if key in current or now - entry["seen"] < 2 * MULTI_INTERVAL:
+            # A winds-aloft day ends with its UTC day (_winds_aloft), not after a gap.
+            if key in current or key[0] == winds.KIND or now - entry["seen"] < 2 * MULTI_INTERVAL:
                 continue
             finding = copy.deepcopy(entry["finding"])
             info = finding.evidence["maneuver"]
@@ -2195,6 +2202,74 @@ class Detector:
                 )
                 self._confirm(db, entry["a"], finding, now, entry["extra"])
             del self.multi[key]
+
+    def _winds_aloft(self, db, now):
+        """The UTC day's winds-aloft finding, evaluated every winds.INTERVAL.
+
+        The kind has no subject aircraft. Its row is saved on one eastbound aircraft
+        seen that day, and later evaluations keep that aircraft (the open entry, else
+        the day's saved row) so the day stays one row. The row stays open through
+        the day and ends once, with end_reason "day_closed", after UTC midnight.
+        """
+        today = curation.utc_day(now)
+        carrier = None
+        for key, entry in list(self.multi.items()):
+            if key[0] != winds.KIND:
+                continue
+            if entry["finding"].evidence["winds_aloft"]["day"] == today:
+                carrier = key[1]
+                continue
+            finding = copy.deepcopy(entry["finding"])
+            info = finding.evidence["maneuver"]
+            if info.get("state") == "active":
+                info.update(state="ended", end_reason="day_closed")
+                self._confirm(db, entry["a"], finding, now, entry["extra"])
+            del self.multi[key]
+        if now - self.winds_at < winds.INTERVAL:
+            return
+        self.winds_at = now
+
+        def choose(addresses):
+            # The aircraft saving the day's row must have a report in memory, or an open entry.
+            saved = carrier
+            if saved is None:
+                start = now - now % 86400
+                row = db.execute(
+                    """SELECT hex FROM events WHERE last_seen>=? AND kind=? AND origin=? AND json_valid(evidence)
+                    AND json_extract(evidence,'$.winds_aloft.day')=? ORDER BY id LIMIT 1""",
+                    (start, winds.KIND, LIVE_ORIGIN, today),
+                ).fetchone()
+                saved = row["hex"] if row else None
+            if saved in addresses and (saved in self.previous or (winds.KIND, saved) in self.multi):
+                return saved
+            chosen = next((address for address in addresses if address in self.previous), None)
+            if chosen is None:
+                LOG.debug("Winds aloft: no eastbound aircraft of the day is in memory; evaluation skipped")
+            return chosen
+
+        evaluated = winds.evaluate(
+            db, now, wind_lookup=lambda day, hour: winds.cached_wind(db, day, hour, now), choose=choose
+        )
+        if evaluated is None:
+            return
+        primary, finding, members = evaluated
+        previous, held = self.previous.get(primary), self.multi.get((winds.KIND, primary))
+        if previous is not None:
+            a, extra = previous["a"], _extra(previous["session"], previous["checks"])
+        else:
+            a, extra = held["a"], held["extra"]
+        finding.evidence["participants"] = [
+            maneuvers.participant(
+                member["hex"],
+                "member",
+                aircraft=(self.previous.get(member["hex"]) or {}).get("a"),
+                source="adsb_icao",
+                measurements={"median_gs_kn": member["median_gs_kn"]},
+            )
+            for member in members
+        ]
+        self.multi[(winds.KIND, primary)] = {"finding": finding, "a": a, "extra": extra, "seen": now}
+        self._confirm(db, a, finding, now, extra)
 
     def _stale(self, db, now, status):
         """End once the open episodes of addresses whose reports stopped 1–3 minutes ago."""
@@ -2381,6 +2456,7 @@ class Detector:
         db.execute("DELETE FROM flightaware_cache WHERE fetched_at<?", (now - flightaware.RETENTION,))
         db.execute("DELETE FROM type_checks WHERE fetched_at<?", (now - typecheck.RETENTION,))
         db.execute("DELETE FROM wind_cache WHERE fetched_at<?", (now - wind.RETENTION,))
+        winds.prune(db, now)
         cutoff = now - 365 * 86400
         db.execute("DELETE FROM events WHERE last_seen<?", (cutoff,))
         db.execute(

@@ -36,6 +36,9 @@ METRICS = {
     key: PUBLIC_LABELS.get(key, (label, UNIT_NAMES.get(unit, unit)))
     for key, (label, unit) in {**CONTRACT_METRICS, **maneuvers.METRICS}.items()
 }
+# Another aircraft's own measurements that no episode metric names: a day's median
+# ground speed for each participant in a winds-aloft day.
+PARTICIPANT_METRICS = {"median_gs_kn": ("Median ground speed for the UTC day", "kn")}
 # Episode metrics shown with their own timestamp or as a rule, not over the window.
 PEAK_METRICS = {"peak_rate_fpm": "peak_at_utc"}
 RULE_METRICS = {"threshold_fpm"}

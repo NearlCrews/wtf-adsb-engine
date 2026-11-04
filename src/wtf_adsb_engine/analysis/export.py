@@ -252,7 +252,14 @@ PARTICIPANT = _object(
         "type_description": lambda value: _text(value, 160),
         "role": _enum(*stories.PARTICIPANT_ROLES),
         "source": SOURCE,
-        "measurements": _object({key: _numeric for key in set(episode_evidence.METRICS) | POINT_NUMBERS}),
+        "measurements": _object(
+            {
+                key: _numeric
+                for key in set(episode_evidence.METRICS)
+                | set(episode_evidence.PARTICIPANT_METRICS)
+                | POINT_NUMBERS
+            }
+        ),
         "quality_flags": FLAGS,
     }
 )
@@ -303,6 +310,7 @@ METRIC_FIELDS = {
         "no_messages",
         "ground",
         "rate_lost",
+        "day_closed",
     ),
     "turn_direction": _enum("left", "right"),
     "basis": _enum("type", "turn_rate"),
@@ -488,6 +496,28 @@ EVIDENCE_FIELDS = {
         }
     ),
     "unregistered": _object({"callsign": _text, "category": _token, "source": SOURCE}),
+    "winds_aloft": _object(
+        {
+            "day": _text,
+            "east_addresses": _numeric,
+            "west_addresses": _numeric,
+            "east_median_kn": _numeric,
+            "west_median_kn": _numeric,
+            "east_quartiles_kn": _array(_numeric, 2),
+            "west_quartiles_kn": _array(_numeric, 2),
+            "asymmetry_kn": _numeric,
+            "altitude_floor_ft": _numeric,
+            "evaluated_at": _numeric,
+            "wind_250_hpa": _object(
+                {
+                    "speed_kn": _numeric,
+                    "direction_deg": _numeric,
+                    "source": _enum("open-meteo"),
+                    "hour": _text,
+                }
+            ),
+        }
+    ),
     "season_record": _object(
         {
             **{

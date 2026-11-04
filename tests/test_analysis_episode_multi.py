@@ -664,6 +664,64 @@ class AnomalyTagTests(unittest.TestCase):
         self.assertEqual(count, 0)
 
 
+class WindsAloftCollectorTests(unittest.TestCase):
+    def test_level_jets_by_direction_make_one_row_per_day_that_ends_after_midnight(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "journal.db"
+        app.initialize(path)
+        detector = app.Detector(path)
+        noon = 1_793_880_000.0  # 2026-11-05 12:00 UTC
+
+        def poll(step, now, aircraft=True):
+            reports = [
+                {
+                    "hex": f"{'b' if east else 'c'}{i:05x}",
+                    "type": "adsb_icao",
+                    "seen": 0,
+                    "seen_pos": 0,
+                    "lat": LAT0 + i * 0.05 + (0.02 if east else 0),
+                    "lon": LON0,
+                    "alt_baro": 35000,
+                    "baro_rate": 0,
+                    "track": 90 if east else 270,
+                    "gs": (560 + i % 5) if east else (380 - i % 5),
+                    "messages": 100 + step,
+                }
+                for east in (True, False)
+                for i in range(40)
+            ]
+            detector.process({"now": now, "aircraft": reports if aircraft else []}, now)
+
+        def rows():
+            with app.connect(path) as db:
+                return [
+                    app.event_dict(row)
+                    for row in db.execute("SELECT * FROM events WHERE kind='winds_aloft_day'")
+                ]
+
+        with patch.object(app.watchlists, "lookup", return_value=None):
+            poll(0, noon)
+            poll(1, noon + 600)
+            saved = rows()
+            self.assertEqual(len(saved), 1)
+            self.assertGreaterEqual(saved[0]["value"], 150)
+            evidence = saved[0]["evidence"]
+            self.assertEqual(evidence["winds_aloft"]["day"], "2026-11-05")
+            self.assertEqual(evidence["winds_aloft"]["east_addresses"], 40)
+            self.assertEqual(evidence["maneuver"]["state"], "active")
+            self.assertEqual(evidence["maneuver"]["evaluated_at"], noon + 600)
+            self.assertNotIn("lat", evidence["aircraft"])
+            self.assertTrue(evidence["participants"])
+            self.assertTrue(all("median_gs_kn" in item["measurements"] for item in evidence["participants"]))
+            # The UTC day closes: the row ends once, and no new row starts without samples.
+            poll(2, noon + 43200 + 60, aircraft=False)
+            saved = rows()
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]["evidence"]["maneuver"]["state"], "ended")
+        self.assertEqual(saved[0]["evidence"]["maneuver"]["end_reason"], "day_closed")
+
+
 class TelemetryFieldTests(unittest.TestCase):
     def test_optional_readsb_fields_are_kept_only_when_valid(self):
         aircraft = {

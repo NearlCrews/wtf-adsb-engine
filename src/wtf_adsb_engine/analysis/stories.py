@@ -745,7 +745,11 @@ def participants(evidence, primary=None):
         if isinstance(measurements, dict):
             for key, value in measurements.items():
                 value = number(value)
-                if value is not None and (key in READINGS or key in episode_evidence.METRICS):
+                if value is not None and (
+                    key in READINGS
+                    or key in episode_evidence.METRICS
+                    or key in episode_evidence.PARTICIPANT_METRICS
+                ):
                     values[key] = value
         source = item.get("source")
         result.append(
