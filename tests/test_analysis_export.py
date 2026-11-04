@@ -627,6 +627,7 @@ class ProjectionClockTests(unittest.TestCase):
         source.update(kind="watch_type", category="airframes", value=None, unit="")
         del source["evidence"]["maneuver"]
         source["evidence"]["aircraft"]["t"] = "B52"
+        source["evidence"]["type_check"] = {"state": "pending"}
         held = export.project_source(source, now=NOW + 60)["selection"]
         self.assertEqual(held["publication_hold"], "type_check_pending")
         self.assertIn(
@@ -635,6 +636,10 @@ class ProjectionClockTests(unittest.TestCase):
         stale = export.project_source(source, now=NOW + 40 * 86400)["selection"]
         self.assertIsNone(stale["publication_hold"])
         self.assertEqual((stale["reasons"], stale["blocking_rules"]), ([], []))
+        # A finding the worker never asked about keeps holding, however old.
+        del source["evidence"]["type_check"]
+        unchecked = export.project_source(source, now=NOW + 40 * 86400)["selection"]
+        self.assertEqual(unchecked["publication_hold"], "type_check_pending")
 
 
 if __name__ == "__main__":
