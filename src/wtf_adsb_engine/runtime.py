@@ -334,7 +334,7 @@ class Runtime:
 
     def poll(self):
         self.start()
-        counts, errors = {}, {}
+        counts, errors, refused = {}, {}, {}
         references, reference_errors = {}, {}
         for name, plugin in self.references:
             try:
@@ -411,7 +411,14 @@ class Runtime:
                         if not isinstance(observation, Observation):
                             raise ValueError("Detector returned an incompatible observation")
                         data = dict(observation.data)
-                        wire.validate_observation(data)
+                        try:
+                            wire.validate_observation(data)
+                        except wire.PrivacyError as error:
+                            # One refused finding stays out of the feed; the rest of the
+                            # pass still commits, so the watermark keeps moving.
+                            refused[name] = refused.get(name, 0) + 1
+                            LOG.warning("Pass %s left out one finding (%s)", name, failure_message(error))
+                            continue
                         for extension in data.get("extensions", []):
                             self.validate_extension(extension)
                         for enrichment_name, enricher in enrichers:
@@ -459,7 +466,7 @@ class Runtime:
                 LOG.warning("Pass %s failed (%s)", name, failure_message(error))
                 self.store.input_failed(name, now, mode=mode)
                 errors[name] = type(error).__name__
-        return {"changes": counts, "errors": errors, "references": reference_errors}
+        return {"changes": counts, "errors": errors, "refused": refused, "references": reference_errors}
 
     def deliver(self, binding):
         name, sink, formatter = binding
@@ -537,7 +544,11 @@ class Runtime:
         ]
         for thread in workers:
             thread.start()
-        progress = {"last_poll_started": time.time(), "last_poll_completed": time.time()}
+        progress = {
+            "last_poll_started": time.time(),
+            "last_poll_completed": time.time(),
+            "last_clean_poll": time.time(),
+        }
 
         def heartbeat():
             while not stop.is_set():
@@ -561,8 +572,11 @@ class Runtime:
         try:
             while not stop.is_set():
                 progress["last_poll_started"] = time.time()
-                print(json.dumps(self.poll()), flush=True)
+                result = self.poll()
+                print(json.dumps(result), flush=True)
                 progress["last_poll_completed"] = time.time()
+                if not result.get("errors"):
+                    progress["last_clean_poll"] = progress["last_poll_completed"]
                 stop.wait(interval)
         finally:
             stop.set()

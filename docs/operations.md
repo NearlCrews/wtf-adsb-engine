@@ -59,6 +59,12 @@ heartbeat can remain healthy while a large first export catches up. Use liveness
 for restart supervision and readiness for consumer gates. Both commands are
 read-only and start no input or provider. `--max-age` defaults to 300 seconds.
 
+Liveness also fails, with `stalled` set, once every analysis pass has failed for
+an hour while polling stayed on time. A finding refused for private field names
+or text is left out and logged, and the pass result counts it under `refused`;
+the other findings in that pass still commit, so one refused finding cannot hold
+the watermark.
+
 Output workers retry temporary database and destination failures independently.
 If a failure also prevents saving delivery status, the engine logs the output
 name and exception type and keeps retrying. Check the delivered manifest and

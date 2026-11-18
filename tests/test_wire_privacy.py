@@ -116,6 +116,31 @@ class PrivacyEquivalenceTests(unittest.TestCase):
                 refused += self.assertSame(mutated(self.base, path, key, "key"), path) != "accepted"
         self.assertGreater(refused, 1000)
 
+    def test_a_home_segment_is_private_only_as_a_path_of_its_own(self):
+        for text in (
+            "https://www.example.com/English/home/default.aspx",
+            "https://example.com/home/",
+            "example.com/home/page",
+        ):
+            self.assertIsNone(wire.PRIVATE_TEXT.search(text), text)
+        for text in (
+            "/home/user/x",
+            "see /home/user/x",
+            "file:///home/user/x",
+            "path=/home/user/x",
+            "https://example.com/?next=/home/user",
+            '"/home/user"',
+        ):
+            self.assertIsNotNone(wire.PRIVATE_TEXT.search(text), text)
+
+    def test_private_fields_and_text_raise_the_privacy_error(self):
+        for value in ({"notes": "x"}, ["see /home/user/x"], "y" * 20001):
+            with self.assertRaises(wire.PrivacyError):
+                wire.privacy(value)
+        with self.assertRaises(ValueError) as caught:
+            wire.privacy([math.nan])
+        self.assertNotIsInstance(caught.exception, wire.PrivacyError)
+
     def test_seeded_random_mutations_with_several_problems(self):
         rng = random.Random(3)
         candidates = list(paths(self.base))

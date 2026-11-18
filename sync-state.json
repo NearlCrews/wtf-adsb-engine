@@ -141,7 +141,7 @@
     }
   },
   "shared_digests": {
-    "src/wtf_adsb_engine/wire.py": "1113a72ec98b42f918a10c1386d85088adf3153db456dd98cbd6cfd7b227b00a",
+    "src/wtf_adsb_engine/wire.py": "a271925a5b4cc075e5734b1bd1f7a137a1152a44368f0d439d840d4a5291a0b4",
     "src/wtf_adsb_engine/analysis/kinds.py": "b260755eef7bc4d787c15a53231e586ef6f2aa7a9b09896abc23c37a910a7637",
     "src/wtf_adsb_engine/analysis/enrichment_rules.py": "335c61fd7c0d8d38da613afd7e644b8ae7197252ac27586d342a43c3da1db25f",
     "src/wtf_adsb_engine/contracts/change-batch-v1.schema.json": "c2747586fa0ffb5621a8f6f9179c0afbdce13bbb38d57a126aefbdd55b6b919a",

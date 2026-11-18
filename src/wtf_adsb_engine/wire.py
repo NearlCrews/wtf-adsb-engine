@@ -61,8 +61,10 @@ PRIVATE_KEYS = frozenset(
         "token",
     }
 )
+# A home directory is a path of its own: after a host or another path segment, as in a
+# public address ending /English/home/default.aspx, the same text is a page name.
 PRIVATE_TEXT = re.compile(
-    r"\.ts\.net\b|\blocalhost\b|/\.private\b|/home/|/opt/docker-compose/|/opt/adsb/"
+    r"\.ts\.net\b|\blocalhost\b|/\.private\b|(?<![\w.~%-])/home/|/opt/docker-compose/|/opt/adsb/"
     r"|https?://(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|169\.254\.|100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|\[?::1\b)"
     r"|https?://[^/\s]+\.(?:local|internal|lan)(?:[/:\s]|$)",
     re.I,
@@ -132,6 +134,10 @@ def loads(data):
     return json.loads(data, object_pairs_hook=_object, parse_constant=_constant)
 
 
+class PrivacyError(ValueError):
+    """Evidence that names a private field or holds private or oversized text."""
+
+
 # Keys and short strings privacy() has accepted, so repeated track fields and labels are
 # checked once per process. Bounded; a miss only means the full check runs again.
 _SAFE_KEYS, _SAFE_TEXT = set(), set()
@@ -146,14 +152,14 @@ _NESTING, _FIELD, _TEXT = (
 
 def _key(key):
     if not isinstance(key, str) or key.lower() in PRIVATE_KEYS:
-        raise ValueError(_FIELD)
+        raise PrivacyError(_FIELD)
     if type(key) is str and len(_SAFE_KEYS) < _SAFE_LIMIT:
         _SAFE_KEYS.add(key)
 
 
 def _text(value):
     if len(value) > 20000 or PRIVATE_TEXT.search(value):
-        raise ValueError(_TEXT)
+        raise PrivacyError(_TEXT)
     if len(value) <= 64 and len(_SAFE_TEXT) < _SAFE_LIMIT:
         _SAFE_TEXT.add(value)
 
@@ -195,7 +201,7 @@ def privacy(value, depth=0):
     elif isinstance(value, dict):
         for key, item in value.items():
             if not isinstance(key, str) or key.lower() in PRIVATE_KEYS:
-                raise ValueError(_FIELD)
+                raise PrivacyError(_FIELD)
             privacy(item, depth + 1)
     elif isinstance(value, list):
         if len(value) > 50000:
@@ -204,7 +210,7 @@ def privacy(value, depth=0):
             privacy(item, depth + 1)
     elif isinstance(value, str):
         if len(value) > 20000 or PRIVATE_TEXT.search(value):
-            raise ValueError(_TEXT)
+            raise PrivacyError(_TEXT)
     elif isinstance(value, float) and not math.isfinite(value):
         raise ValueError("Nonfinite evidence")
     elif value is not None and not isinstance(value, (str, bool, int, float)):

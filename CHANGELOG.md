@@ -34,6 +34,16 @@ and evidence contract versions are tracked separately.
 
 ### Fixed
 
+- A public address whose path has a `home` segment, such as a reference link
+  ending `/English/home/default.aspx`, no longer counts as a private home
+  directory. One such watchlist link failed every analysis pass and held the
+  feed's watermark until the aircraft's finding aged out. A home directory is
+  still refused as a path of its own, in a `file:` address, or in a query value.
+- A finding refused for private field names or text is left out of the feed and
+  logged, and the pass commits its other findings. The poll result counts these
+  under `refused`. `wire.PrivacyError`, a `ValueError`, marks the refusals.
+- `health` reports `stalled` and fails liveness when every analysis pass has
+  failed for an hour while polling stayed on time.
 - TCAS findings export drawable media parts. The parts now come from the first
   sample list that holds positions, so the context samples supply them when the
   maneuver samples are positionless advisory reports. Parts drawn from context

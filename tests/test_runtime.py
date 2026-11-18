@@ -254,6 +254,29 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("provider_mutation", source["context"])
         self.assertTrue(all("provider_mutation" not in c["observation"]["context"] for c in changes))
 
+    def test_a_refused_finding_does_not_hold_back_the_rest_of_the_pass(self):
+        runtime = Runtime(self.config)
+        name, _, detectors, _ = runtime.pipelines[0]
+        refused = observation()
+        refused["context"]["label"] = "see /home/user/x"
+        with (
+            runtime.locked(),
+            patch.object(
+                detectors[0][1],
+                "analyze",
+                return_value=(Observation("a", refused), Observation("b", observation())),
+            ),
+            self.assertLogs("wtf_adsb_engine", "WARNING") as logs,
+        ):
+            result = runtime.once()
+            changes = runtime.store.next_batch(0)["changes"]
+            health = runtime.store.state()["health"]
+        self.assertEqual(result["errors"], {})
+        self.assertEqual(result["refused"], {name: 1})
+        self.assertEqual(len(changes), 1)
+        self.assertTrue(health["ready"])
+        self.assertNotIn("/home/", "".join(logs.output))
+
     def test_detector_extensions_are_approved_and_valid_before_checkpoint_commit(self):
         namespace = "org.example.detector"
         schema = {

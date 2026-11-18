@@ -117,6 +117,10 @@ def migrate_journal(source, config_path, *, pipeline=None):
         return receipt
 
 
+# How long analysis passes may keep failing before the liveness check reports it.
+STALL_SECONDS = 3600
+
+
 def health(config_path, *, readiness=False, max_age=300, now=None):
     """Check saved progress only; never initialize plugins or make requests."""
     if not math.isfinite(max_age) or max_age <= 0:
@@ -159,4 +163,12 @@ def health(config_path, *, readiness=False, max_age=300, now=None):
             and type(completed) in (int, float)
             and 0 <= now - completed <= max(max_age, config.get("poll_interval_seconds", 10) + 60)
         )
-    return {"alive": bool(running and fresh and heartbeat.get("inputs_alive")), "updated_at": stamp}
+    # Polling can stay on time while every analysis pass fails. A heartbeat from an
+    # older engine has no clean-poll time and is not held to this.
+    clean = heartbeat.get("last_clean_poll", stamp)
+    stalled = not (type(clean) in (int, float) and now - clean <= max(max_age, STALL_SECONDS))
+    return {
+        "alive": bool(running and fresh and not stalled and heartbeat.get("inputs_alive")),
+        "stalled": stalled,
+        "updated_at": stamp,
+    }

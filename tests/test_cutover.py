@@ -96,6 +96,13 @@ options={directory="feed"}
             self.assertFalse(health(self.config, now=1400)["alive"])
             write_json(state / "heartbeat.json", {"updated_at": 1000, "inputs_alive": False})
             self.assertFalse(health(self.config, now=1100)["alive"])
+            beat = {"updated_at": 9000, "inputs_alive": True, "last_clean_poll": 5500}
+            write_json(state / "heartbeat.json", beat)
+            self.assertEqual(health(self.config, now=9050)["stalled"], False)
+            self.assertTrue(health(self.config, now=9050)["alive"])
+            write_json(state / "heartbeat.json", {**beat, "last_clean_poll": 5000})
+            self.assertEqual(health(self.config, now=9050)["stalled"], True)
+            self.assertFalse(health(self.config, now=9050)["alive"])
         self.assertFalse(health(self.config, now=1100)["alive"])
 
     def test_flightaware_passes_remain_300_seconds_apart(self):
